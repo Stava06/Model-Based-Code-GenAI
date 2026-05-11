@@ -4,7 +4,7 @@ from uuid import uuid4
 
 from flask import Blueprint, jsonify, request, current_app
 
-userAPI = Blueprint("userAPI", __name__, url_prefix="/api/users")
+userAPI = Blueprint("userAPI", __name__, url_prefix="/users")
 user_collection = current_app.extensions["users_collection"]
 
 @userAPI.get("/")
