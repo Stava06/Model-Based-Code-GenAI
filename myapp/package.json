@@ -1,11 +1,11 @@
 {
-  "dependencies": {
-    "requirements": "^3.0.0"
-  },
-  "devDependencies": {
-    "@tailwindcss/vite": "^4.3.0",
-    "autoprefixer": "^10.5.0",
-    "postcss": "^8.5.14",
-    "tailwindcss": "^4.3.0"
+  "name": "myapp",
+  "private": true,
+  "workspaces": ["my-web"],
+  "scripts": {
+    "build": "npm run build -w my-web",
+    "dev": "npm run dev -w my-web",
+    "preview": "npm run preview -w my-web",
+    "lint": "npm run lint -w my-web"
   }
 }
