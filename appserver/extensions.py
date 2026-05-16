@@ -1,6 +1,5 @@
 from pymongo import MongoClient
 from config import CONFIG
-import certifi
 from messages import start_message, success_message, error_message
 
 def init_mongo(app):
@@ -15,7 +14,7 @@ def init_mongo(app):
         return
 
     try:
-        client = MongoClient(uri, tlsCAFile=certifi.where(), serverSelectionTimeoutMS=5000)
+        client = MongoClient(uri, serverSelectionTimeoutMS=5000)
         client.admin.command("ping") 
         db = client[db_name]
         app.extensions["users_collection"] = db[coll_name]
