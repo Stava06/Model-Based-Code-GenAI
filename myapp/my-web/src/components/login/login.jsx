@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { registerUser, loginUser } from '../services/UserService';
+import { registerUser, loginUser } from '../../services/UserService';
 
 const AuthForm = () => {
   const [isLogin, setIsLogin] = useState(true);
