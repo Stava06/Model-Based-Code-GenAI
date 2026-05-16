@@ -2,3 +2,4 @@ flask>=3.0,<4
 pymongo>=4.0,<5
 python-dotenv>=1.0,<2
 gunicorn>=22.0,<24
+flask-cors>=4.0,<5

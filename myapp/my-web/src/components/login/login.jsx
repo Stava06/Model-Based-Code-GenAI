@@ -1,10 +1,35 @@
 import React, { useState } from 'react';
+import { registerUser, loginUser } from '../services/UserService';
 
 const AuthForm = () => {
   const [isLogin, setIsLogin] = useState(true);
   const [hovered, setHovered] = useState(false);
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+  const [fullName, setFullName] = useState('');
+  const [message, setMessage] = useState('');
 
   const toggleMode = () => setIsLogin(!isLogin);
+
+  const handleRegister = async (e) => {
+    e.preventDefault();
+    try {
+      const response = await registerUser(fullName, email, password);
+      setMessage(response.message || "Registration successful!");
+    } catch (error) {
+      setMessage(error.response?.data?.message || error.message || "An error occurred");
+    }
+  }
+
+  const handleLogin = async (e) => {
+    e.preventDefault();
+    try {
+      const response = await loginUser(email, password);
+      setMessage(response.message || "Login successful!");
+    } catch (error) {
+      setMessage(error.response?.data?.message || error.message || "An error occurred");
+    }
+  }
 
   return (
     <div className="relative flex min-h-screen items-center justify-center overflow-hidden bg-slate-950 font-sans text-slate-200">
@@ -38,7 +63,13 @@ const AuthForm = () => {
             </p>
           </div>
 
-          <form className="space-y-4" onSubmit={(e) => e.preventDefault()}>
+          {message && (
+            <div className={`mb-6 rounded-xl p-3 text-sm text-center ${message.toLowerCase().includes('success') ? 'bg-green-500/20 text-green-400 border border-green-500/30' : 'bg-red-500/20 text-red-400 border border-red-500/30'}`}>
+              {message}
+            </div>
+          )}
+
+          <form className="space-y-4" onSubmit={(e) => { isLogin ? handleLogin(e) : handleRegister(e) }}>
             {!isLogin && (
               <div className="space-y-1 text-left">
                 <label htmlFor="name" className="text-xs font-medium text-slate-300 pl-1">Full Name</label>
@@ -49,6 +80,8 @@ const AuthForm = () => {
                   <input
                     type="text"
                     id="name"
+                    value={fullName}
+                    onChange={(e) => setFullName(e.target.value)}
                     placeholder="John Doe"
                     className="block w-full rounded-xl border border-slate-700 bg-slate-900/50 py-3 pl-10 pr-4 text-sm text-slate-100 placeholder-slate-500 shadow-sm transition-all hover:bg-slate-800/50 focus:border-purple-500 focus:bg-slate-900/50 focus:outline-none focus:ring-4 focus:ring-purple-500/20"
                   />
@@ -65,6 +98,8 @@ const AuthForm = () => {
                 <input
                   type="email"
                   id="email"
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
                   placeholder="john@example.com"
                   className="block w-full rounded-xl border border-slate-700 bg-slate-900/50 py-3 pl-10 pr-4 text-sm text-slate-100 placeholder-slate-500 shadow-sm transition-all hover:bg-slate-800/50 focus:border-purple-500 focus:bg-slate-900/50 focus:outline-none focus:ring-4 focus:ring-purple-500/20"
                 />
@@ -83,6 +118,8 @@ const AuthForm = () => {
                 <input
                   type="password"
                   id="password"
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
                   placeholder="••••••••"
                   className="block w-full rounded-xl border border-slate-700 bg-slate-900/50 py-3 pl-10 pr-4 text-sm text-slate-100 placeholder-slate-500 shadow-sm transition-all hover:bg-slate-800/50 focus:border-purple-500 focus:bg-slate-900/50 focus:outline-none focus:ring-4 focus:ring-purple-500/20"
                 />

@@ -1,6 +1,7 @@
 import os
 
 from flask import Flask, jsonify, request
+from flask_cors import CORS
 from pymongo.errors import PyMongoError
 
 from api.users import userAPI
@@ -9,6 +10,7 @@ from extensions import init_mongo
 from messages import start_message, success_message, error_message
 
 app = Flask(__name__)
+CORS(app)
 
 app.config["MONGODB_URI"] = CONFIG["database"]["uri"]
 
