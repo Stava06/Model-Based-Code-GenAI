@@ -1,6 +1,6 @@
 import os
 
-from flask import Flask, jsonify
+from flask import Flask, jsonify, request
 from pymongo.errors import PyMongoError
 
 from api.users import userAPI
@@ -16,6 +16,8 @@ init_mongo(app)
 
 @app.get("/")
 def index():
+    if request.method == "HEAD":
+        return "", 200
     check_db = False
     coll = app.extensions.get("users_collection")
     if coll is not None:
