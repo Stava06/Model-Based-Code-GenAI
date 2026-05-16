@@ -16,7 +16,8 @@ def _serialize_user(doc):
     return user
 
 
-@userAPI.get("/")
+@userAPI.get("", strict_slashes=False)
+@userAPI.get("/", strict_slashes=False)
 def list_users():
     coll = _users_collection()
     if coll is None:
