@@ -36,29 +36,36 @@ def list_users():
         return jsonify({"error": str(e)}), 500
 
 
-@userAPI.get("/login/<email>/<password>", strict_slashes=False)
-def login(email, password):
-    start_message('users', "Logging in user")
+@userAPI.route("/login", methods=["GET", "POST"], strict_slashes=False)
+def login():
+    start_message("users", {"action": "login"})
+
+    if request.method == "GET":
+        email = request.args.get("email")
+        password = request.args.get("password")
+    else:
+        data = request.get_json(silent=True) or {}
+        email = data.get("email")
+        password = data.get("password")
+
+    if not email or not password:
+        error_message("users", "email and password are required")
+        return jsonify({"error": "email and password are required"}), 400
 
     coll = _users_collection()
     if coll is None:
-        error_message('users', "Database not configured")
+        error_message("users", "Database not configured")
         return jsonify({"error": "Database not configured"}), 503
     try:
         user = coll.find_one({"email": email})
+        if user is None or user["password"] != password:
+            error_message("users", "Invalid email or password")
+            return jsonify({"error": "Invalid email or password"}), 401
 
-        if user is None:
-            error_message('users', "User not found")
-            return jsonify({"error": "User not found"}), 404
-        
-        if user["password"] != password:
-            error_message('users', "Wrong password")
-            return jsonify({"error": "Wrong password"}), 401
-        
-        success_message('users', "User logged in successfully")
-        return jsonify(user), 200
+        success_message("users", "User logged in successfully")
+        return jsonify(_serialize_user(user)), 200
     except Exception as e:
-        error_message('users', f"Error logging in user: {e}")
+        error_message("users", f"Error logging in user: {e}")
         return jsonify({"error": str(e)}), 500
 
 @userAPI.route("/register", methods=["GET", "POST"], strict_slashes=False)
