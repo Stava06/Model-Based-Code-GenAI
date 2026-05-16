@@ -4,7 +4,7 @@ TIME = None
 def start_message(directory: str, variables: dict = {}):
     directory = directory.capitalize()
     print(f" --------- Starting {directory} --------- ")
-    print(f"Variables: {variables}\n")
+    print(f"Variables: {variables if variables else 'None'}\n")
 
     global TIME
     TIME = time.time()
