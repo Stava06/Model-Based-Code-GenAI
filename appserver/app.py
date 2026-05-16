@@ -1,10 +1,11 @@
+import os
+
 from flask import Flask, jsonify
 from pymongo.errors import PyMongoError
 
-from .config import CONFIG
-from .extensions import init_mongo
-from .api.users import userAPI
-
+from api.users import userAPI
+from config import CONFIG
+from extensions import init_mongo
 
 app = Flask(__name__)
 
@@ -27,11 +28,15 @@ def index():
         {"service": "appserver", "message": "ok", "db_connected": "yes" if check_db else "no"}
     )
 
+
 @app.get("/health")
 def health():
     return jsonify({"status": "healthy"}), 200
 
-# Register blueprints
+
 app.register_blueprint(userAPI)
 
-app.run(host="0.0.0.0", port=5000, debug=True)
+
+if __name__ == "__main__":
+    port = int(os.environ.get("PORT", 5000))
+    app.run(host="0.0.0.0", port=port, debug=os.environ.get("FLASK_DEBUG") == "1")

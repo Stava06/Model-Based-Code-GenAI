@@ -1,7 +1,22 @@
 from pymongo import MongoClient
-from .config import CONFIG
+from config import CONFIG
+
 
 def init_mongo(app):
-    client = MongoClient(CONFIG["database"]["uri"])
-    db = client[CONFIG["database"]["name"]]
-    app.extensions["users_collection"] = db[CONFIG["database"]["user_collection"]]
+    uri = CONFIG["database"]["uri"]
+    db_name = CONFIG["database"]["name"]
+    coll_name = CONFIG["database"]["user_collection"]
+
+    if not uri or not db_name or not coll_name:
+        print("Database configuration is missing")
+        app.extensions["users_collection"] = None
+        return
+
+    try:
+        client = MongoClient(uri)
+        db = client[db_name]
+        app.extensions["users_collection"] = db[coll_name]
+        print(f"MongoDB initialized successfully: {uri}")
+    except Exception as e:
+        print(f"Error initializing MongoDB: {e}")
+        app.extensions["users_collection"] = None
