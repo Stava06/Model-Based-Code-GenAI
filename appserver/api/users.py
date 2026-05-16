@@ -1,6 +1,8 @@
 from __future__ import annotations
 
-from flask import Blueprint, current_app, jsonify
+from flask import Blueprint, current_app, jsonify, request
+
+from messages import start_message, success_message, error_message
 
 userAPI = Blueprint("userAPI", __name__, url_prefix="/users")
 
@@ -19,24 +21,78 @@ def _serialize_user(doc):
 @userAPI.get("", strict_slashes=False)
 @userAPI.get("/", strict_slashes=False)
 def list_users():
+    start_message('users', "Listing users")
+
     coll = _users_collection()
     if coll is None:
+        error_message('users', "Database not configured")
         return jsonify({"error": "Database not configured"}), 503
     try:
         users = [_serialize_user(user) for user in coll.find()]
-        return jsonify(users)
+        success_message('users', "Users listed successfully")
+        return jsonify(users), 200
     except Exception as e:
+        error_message('users', f"Error listing users: {e}")
         return jsonify({"error": str(e)}), 500
 
 
-@userAPI.post("/create")
-def create_user():
+@userAPI.get("/login/<email>/<password>", strict_slashes=False)
+def login(email, password):
+    start_message('users', "Logging in user")
+
     coll = _users_collection()
     if coll is None:
+        error_message('users', "Database not configured")
         return jsonify({"error": "Database not configured"}), 503
     try:
-        user = {"name": "Stav Avraham", "email": "stav@gmail.com", "password": "123"}
-        result = coll.insert_one(user)
-        return jsonify({"message": "User created successfully", "id": str(result.inserted_id)}), 201
+        user = coll.find_one({"email": email})
+
+        if user is None:
+            error_message('users', "User not found")
+            return jsonify({"error": "User not found"}), 404
+        
+        if user["password"] != password:
+            error_message('users', "Wrong password")
+            return jsonify({"error": "Wrong password"}), 401
+        
+        success_message('users', "User logged in successfully")
+        return jsonify(user), 200
     except Exception as e:
+        error_message('users', f"Error logging in user: {e}")
+        return jsonify({"error": str(e)}), 500
+
+@userAPI.route("/register", methods=["GET", "POST"], strict_slashes=False)
+def register():
+    start_message("users", {"action": "register"})
+
+    if request.method == "GET":
+        name = request.args.get("name")
+        email = request.args.get("email")
+        password = request.args.get("password")
+    else:
+        data = request.get_json(silent=True) or {}
+        name = data.get("name")
+        email = data.get("email")
+        password = data.get("password")
+
+    if not name or not email or not password:
+        error_message("users", "name, email, and password are required")
+        return jsonify({"error": "name, email, and password are required"}), 400
+
+    coll = _users_collection()
+    if coll is None:
+        error_message("users", "Database not configured")
+        return jsonify({"error": "Database not configured"}), 503
+    try:
+        if coll.find_one({"email": email}):
+            error_message("users", "User already exists")
+            return jsonify({"error": "User already exists"}), 400
+
+        result = coll.insert_one({"name": name, "email": email, "password": password})
+        success_message("users", "User registered successfully")
+        return jsonify(
+            {"message": "User registered successfully", "id": str(result.inserted_id)}
+        ), 201
+    except Exception as e:
+        error_message("users", f"Error registering user: {e}")
         return jsonify({"error": str(e)}), 500

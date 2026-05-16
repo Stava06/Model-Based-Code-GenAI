@@ -6,33 +6,24 @@ from pymongo.errors import PyMongoError
 from api.users import userAPI
 from config import CONFIG
 from extensions import init_mongo
+from messages import start_message, success_message, error_message
 
 app = Flask(__name__)
 
 app.config["MONGODB_URI"] = CONFIG["database"]["uri"]
 
-init_mongo(app)
-
-
 @app.get("/")
 def index():
-    if request.method == "HEAD":
-        return "", 200
-    check_db = False
-    coll = app.extensions.get("users_collection")
-    if coll is not None:
-        try:
-            coll.database.client.admin.command("ping")
-            check_db = True
-        except PyMongoError:
-            check_db = False
-    return jsonify(
-        {"service": "appserver", "message": "ok", "db_connected": "yes" if check_db else "no"}
-    )
+    start_message('main')
+
+    success_message('main', "Index page loaded successfully")
+    return jsonify({"service": "appserver", "message": "ok"}), 200
 
 
 @app.get("/health")
 def health():
+    start_message('health')
+    success_message('health', "Health check successful")
     return jsonify({"status": "healthy"}), 200
 
 
@@ -40,5 +31,7 @@ app.register_blueprint(userAPI)
 
 
 if __name__ == "__main__":
+    init_mongo(app)
+
     port = int(os.environ.get("PORT", 5000))
     app.run(host="0.0.0.0", port=port, debug=os.environ.get("FLASK_DEBUG") == "1")
