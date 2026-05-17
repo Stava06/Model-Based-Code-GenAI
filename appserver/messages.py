@@ -1,22 +1,35 @@
-import time
-TIME = None
+"""
+    Messages module for the app server
+    
+    Includes:
+        - start_mesaage : Starting a new function
+        - success_message : A successful function
+        - error_message : An error in a function
+"""
 
-def start_message(directory: str, variables: dict = {}):
+
+def start_message(directory: str, variables: dict = {}) -> None:
+    """
+        Start message for starting a new function
+    """
     directory = directory.capitalize()
     print(f" --------- Starting {directory} --------- ")
     print(f"Variables: {variables if variables else 'None'}\n")
 
-    global TIME
-    TIME = time.time()
-
-def success_message(directory: str, message: str = None):
+def success_message(directory: str, message: str = None) -> None:
+    """
+        Success message for a successful function
+    """
     directory = directory.capitalize()
     print(f" --------- SUCCESS in {directory} --------- ")
     if message:
         print(f"Message: {message}\n")
-    print(f"Time taken: {round(time.time() - TIME, 2)} seconds\n")
 
-def error_message(directory: str, error: str):
+def error_message(directory: str, error: str = None) -> None:
+    """
+        Error message
+    """
     directory = directory.capitalize()
     print(f" --------- ERROR in {directory} --------- ")
-    print(f"Error: {error}\n")
+    if error:
+        print(f"Error: {error}\n")
