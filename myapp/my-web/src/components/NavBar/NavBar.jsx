@@ -70,25 +70,6 @@ const NavBar = ({ currentView, setCurrentView }) => {
                 </div>
             </div>
 
-            {/* User Card */}
-            <div className="mb-8 rounded-[1.8rem] border border-white/60 bg-white/70 p-4 shadow-xl shadow-violet-100/40 backdrop-blur-xl">
-                <div className="flex items-center gap-3">
-                    <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-gradient-to-br from-pink-100 to-violet-100 text-sm font-bold text-violet-600">
-                        {user?.name?.charAt(0)?.toUpperCase() || "G"}
-                    </div>
-
-                    <div className="min-w-0">
-                        <h4 className="truncate text-sm font-bold text-slate-800">
-                            {user?.name || "Guest"}
-                        </h4>
-
-                        <p className="truncate text-xs text-slate-500">
-                            {user?.email || ""}
-                        </p>
-                    </div>
-                </div>
-            </div>
-
             {/* Navigation */}
             <nav className="flex-1">
                 <p className="mb-4 px-4 text-xs font-bold uppercase tracking-[0.18em] text-slate-400">
@@ -131,17 +112,32 @@ const NavBar = ({ currentView, setCurrentView }) => {
                     })}
                 </div>
             </nav>
+            {/* User Card */}
+            <div className="flex items-center justify-between rounded-[1.5rem] border border-white/60 bg-white/70 px-4 py-3 shadow-lg shadow-violet-100/30 backdrop-blur-xl">
 
-            {/* Logout */}
-            <div className="mt-8 border-t border-violet-100 pt-6">
+                <div className="flex items-center gap-3 min-w-0">
+                    <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-pink-100 to-violet-100 text-xs font-bold text-violet-600">
+                        {user?.name?.charAt(0)?.toUpperCase() || "G"}
+                    </div>
+
+                    <div className="min-w-0">
+                        <h4 className="truncate text-sm font-semibold text-slate-700">
+                            {user?.name || "Guest"}
+                        </h4>
+
+                        <p className="truncate text-xs text-slate-400">
+                            {user?.email || ""}
+                        </p>
+                    </div>
+                </div>
+
+                {/* Small Sign Out */}
                 <button
                     type="button"
                     onClick={handleLogout}
-                    className="group flex w-full items-center justify-between rounded-2xl px-4 py-3 text-sm font-semibold text-slate-500 transition-all duration-200 hover:bg-rose-50 hover:text-rose-600"
+                    className="group flex shrink-0 items-center gap-1 rounded-xl px-2.5 py-2 text-xs font-medium text-slate-400 transition-all duration-200 hover:bg-rose-50 hover:text-rose-500"
                 >
-                    <span>Sign Out</span>
-
-                    <LogoutIcon className="h-5 w-5 transition-colors duration-200 group-hover:text-rose-500" />
+                    <LogoutIcon className="h-4 w-4 transition-colors duration-200 group-hover:text-rose-500" />
                 </button>
             </div>
         </aside>
