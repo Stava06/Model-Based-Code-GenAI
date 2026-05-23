@@ -42,6 +42,10 @@ class Config:
                 "port": os.getenv("PORT") or 5000,
                 "debug": os.getenv("FLASK_DEBUG") or True,
             },
+            "gemini": {
+                "api_key": os.getenv("GEMINI_API_KEY"),
+                "model": os.getenv("GEMINI_MODEL") or "gemini-2.5-flash",
+            },
         }
 
 

@@ -1,5 +1,6 @@
 from flask import Flask, jsonify
 from flask_cors import CORS
+from api.agent import agentAPI
 from api.users import userAPI
 from config import Config
 from extensions import init_mongo
@@ -43,6 +44,10 @@ def index():
 
 # Register the blueprints
 app.register_blueprint(userAPI)
+app.register_blueprint(agentAPI)
+
+# MongoDB (used by agent memory tools)
+init_mongo(app)
 
 
 if __name__ == "__main__":
