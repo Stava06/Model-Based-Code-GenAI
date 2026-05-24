@@ -40,7 +40,7 @@ class Config:
             },
             "server": {
                 "port": os.getenv("PORT") or 5000,
-                "debug": os.getenv("FLASK_DEBUG") or True,
+                "debug": os.getenv("FLASK_DEBUG") or False,
             },
             "gemini": {
                 "api_key": os.getenv("GEMINI_API_KEY"),

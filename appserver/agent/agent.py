@@ -82,6 +82,7 @@ def create_runner(
         app_name=APP_NAME,
         agent=agent,
         session_service=session_service,
+        auto_create_session=True,
     )
 
 

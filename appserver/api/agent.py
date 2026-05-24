@@ -5,12 +5,14 @@
         - agentAPI : Blueprint for the agent API
 """
 
-import sys
-from pathlib import Path
+import uuid
 
 from flask import Blueprint, jsonify
 from flask import request
+from google.genai import types
 from messages import error_message, start_message, success_message
+from agent.agent import create_runner
+from agent.opl_examples import demo1
 
 agentAPI = Blueprint("agentAPI", __name__, url_prefix="/agent")
 
@@ -54,22 +56,59 @@ def index():
 @agentAPI.get("/generate")
 def generate():
     """
-        Generate code from the OPL
-    """
+        Generate code from the OPL via the ADK runner.
 
-    # TODO: Generate code from the OPL
-
-    return jsonify({"message": "Generated code"}), 200
-    
-@agentAPI.get("/example")
-def example():
+        Query params (optional):
+            opl: OPL source text (defaults to demo1)
+            user_id: ADK session user id (default: api)
     """
-        Get an example OPL
-    """
-    from agent.memory import DBconnection
-    from agent.tools import CodeGeneratorTools
-    from agent.logic_map_example import logic_map_example
-    from agent.opl_examples import demo1
+    start_message("agent", "Generate code")
 
-    tools = CodeGeneratorTools(DBconnection.from_config())
-    return jsonify(tools.generate_code(logic_map_example, demo1)), 200
+    opl = request.args.get("opl") or demo1
+    user_id = request.args.get("user_id", "api")
+    session_id = str(uuid.uuid4())
+
+    new_message = types.Content(
+        role="user",
+        parts=[
+            types.Part(
+                text=f"Generate model-based code from this OPL:\n\n{opl}",
+            ),
+        ],
+    )
+
+    try:
+        runner = create_runner()
+        final_text = None
+        event_count = 0
+        for event in runner.run(
+            user_id=user_id,
+            session_id=session_id,
+            new_message=new_message,
+        ):
+            event_count += 1
+            if not event.is_final_response() or not event.content:
+                continue
+            parts = event.content.parts or []
+            texts = [p.text for p in parts if p.text]
+            if texts:
+                final_text = "\n".join(texts)
+
+        if event_count == 0:
+            raise RuntimeError(
+                "Agent run produced no events (check server logs for ADK errors)",
+            )
+
+        success_message("agent", "Code generated successfully")
+        return jsonify({
+            "success": True,
+            "session_id": session_id,
+            "response": final_text,
+            "event_count": event_count,
+        }), 200
+    except Exception as exc:
+        error_message("agent", f"Generate failed: {exc}")
+        return jsonify({
+            "success": False,
+            "message": str(exc),
+        }), 500

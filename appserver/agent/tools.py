@@ -10,11 +10,11 @@ from google.adk.tools import ToolContext
 from config import CONFIG
 from .memory import DBconnection
 from .opl_examples import demo1, demo2
-from .logic_map_example import logic_map_example
-
-def _stub(message: str) -> dict[str, Any]:
-    return {"status": "not_implemented", "message": message}
-
+from agent.examples.logic_map_example import logic_map_example
+from agent.examples.eval_metrics_example import metrics_example
+from agent.examples.eval_example import evaluation_example
+from agent.examples.optimization_example import optimization_example
+from messages import start_message, error_message, success_message
 
 def _strip_code_fences(text: str) -> str:
     text = text.strip()
@@ -41,6 +41,31 @@ Use the OPL logic map as the ontology: objects, processes, and relations define 
 - Do not include explanations, markdown, or prose—output only the source code.
 """
 
+def _optimize_prompt(opl_map: dict[str, Any], optimization: list[str]) -> str:
+    optimization_text = "\n".join(optimization)
+    return f"""You are an expert software engineer optimizing an OPL (Object-Process Language) specification.
+
+You MUST:
+- Improve logic correctness
+- Improve execution order
+- Remove redundancy
+- Add missing necessary steps
+- Optimize according to evaluation metrics
+
+## OPL map (JSON)
+{json.dumps(opl_map, indent=2)}
+
+## Optimization
+{optimization_text}
+
+## Requirements
+- Return ONLY a valid optimized OPL map (same JSON structure style)
+- Do NOT explain
+- Do NOT add commentary
+- Keep schema consistent
+- Do NOT fabricate evaluation metrics
+- Do NOT fabricate optimization suggestions
+"""
 
 class CodeGeneratorTools:
     """Code Generator — generation and validation tools."""
@@ -50,20 +75,17 @@ class CodeGeneratorTools:
 
     def get_opl_file(self):
         """Resolve OPL file content from memory or MongoDB."""
+        start_message("CodeGeneratorTools", "get_opl_file")
 
         # TODO: Get opl from Local Storage
 
+        success_message("CodeGeneratorTools", "get_opl_file")
         return demo1
-
-    def retrieve_opl_logic_map(self):
-        """Build or load the logic map from OPL."""
-
-        # TODO: Retrieve opl logic map from MongoDB
-
-        return logic_map_example
 
     def generate_code(self, opl_logic_map: dict[str, Any], opl: str):
         """Produce code from the OPL logic map using Gemini API."""
+        start_message("CodeGeneratorTools", "generate_code")
+
         gemini = CONFIG["gemini"]
         api_key = gemini.get("api_key")
         model = gemini.get("model")
@@ -90,40 +112,45 @@ class CodeGeneratorTools:
                     "status": "error",
                     "message": "Gemini returned empty code",
                 }
+
+            success_message("CodeGeneratorTools", "generate_code")
             return {"status": "success", "code": code}
         except ImportError:
+            error_message("CodeGeneratorTools", "generate_code")
+
             return {
                 "status": "error",
                 "message": "google-genai not installed (install google-adk)",
             }
         except Exception as exc:
+            error_message("CodeGeneratorTools", "generate_code")
+            
             return {"status": "error", "message": str(exc)}
 
-    def validate_code(self) -> dict[str, Any]:
+    def validate_code(self, code: str) -> bool:
         """Check generated code syntax and semantics."""
-        return _stub("validate_code")
+        start_message("CodeGeneratorTools", "validate_code")
 
-    def save_code(self, code: str | None = None) -> dict[str, Any]:
+        # TODO: Validate code syntax and semantics
+
+        success_message("CodeGeneratorTools", "validate_code")
+        return True
+
+    def save_code(self, code: str) -> bool:
         """Persist valid generated code to MongoDB."""
-        return self._db.save_code(code=code)
+        start_message("CodeGeneratorTools", "save_code")
 
-    def generate_problem(self) -> dict[str, Any]:
-        """Generate a problem report when generation fails or max attempts are reached."""
-        return _stub("generate_problem")
+        # TODO: Save code to MongoDB
 
-    def save_problem(self, problem: str | None = None) -> dict[str, Any]:
-        """Save a problem report to MongoDB."""
-        return self._db.save_problem(problem=problem)
+        success_message("CodeGeneratorTools", "save_code")
+        return True
 
     def adk_tools(self) -> list[Callable[..., dict[str, Any]]]:
         return [
             self.get_opl_file,
-            self.retrieve_opl_logic_map,
             self.generate_code,
             self.validate_code,
             self.save_code,
-            self.generate_problem,
-            self.save_problem,
         ]
 
 
@@ -135,35 +162,63 @@ class CodeEvaluatorTools:
 
     def get_opl_map(self) -> dict[str, Any]:
         """Load OPL map from MongoDB."""
-        return self._db.get_opl_map()
+        start_message("CodeEvaluatorTools", "get_opl_map")
+        
+        # TODO: Get opl map from MongoDB
 
-    def validate_opl_map(self) -> dict[str, Any]:
+        success_message("CodeEvaluatorTools", "get_opl_map")
+        return logic_map_example
+
+    def validate_opl_map(self, opl_map: dict[str, Any]) -> bool:
         """Check whether the OPL map is valid."""
-        return _stub("validate_opl_map")
+        start_message("CodeEvaluatorTools", "validate_opl_map")
+        
+        # TODO: Validate opl map
+
+        success_message("CodeEvaluatorTools", "validate_opl_map")
+        return True
 
     def get_evaluation_metrics(self) -> dict[str, Any]:
         """Fetch metrics for code evaluation."""
-        return _stub("get_evaluation_metrics")
+        start_message("CodeEvaluatorTools", "get_evaluation_metrics")
+        
+        # TODO: Get evaluation metrics from MongoDB
 
-    def generate_code_evaluation(self) -> dict[str, Any]:
+        success_message("CodeEvaluatorTools", "get_evaluation_metrics")
+        return metrics_example
+
+    def generate_code_evaluation(self, code: str, metrics: list[dict[str, Any]]) -> dict[str, Any]:
         """Produce code-level evaluation results."""
-        return _stub("generate_code_evaluation")
+        start_message("CodeEvaluatorTools", "generate_code_evaluation")
+        
+        # TODO: Eval with Judge0
+        # TODO: Eval with graph coverage
+        # TODO: Eval with code BLEU
 
-    def get_pass_metrics(self) -> dict[str, Any]:
+        #judge0_eval = 100*metrics_example[0]["weight"]
+        #graph_coverage_eval = 100*metrics_example[1]["weight"]
+        #code_bleu_eval = 100*metrics_example[2]["weight"]
+
+        overall_eval = evaluation_example
+
+        success_message("CodeEvaluatorTools", "generate_code_evaluation")
+        return {"status": "success", "evaluation": overall_eval}
+
+    def get_pass_metrics(self) -> int:
         """Fetch metrics for pass evaluation."""
-        return _stub("get_pass_metrics")
+        start_message("CodeEvaluatorTools", "get_pass_metrics")
+        
+        # TODO: Get pass metrics from MongoDB
+        
+        success_message("CodeEvaluatorTools", "get_pass_metrics")
+        return 90
 
-    def generate_pass_evaluation(self) -> dict[str, Any]:
+    def generate_pass_evaluation(self, code_evaluation: dict[str, Any], pass_metrics: int) -> bool:
         """Produce pass-level evaluation results."""
-        return _stub("generate_pass_evaluation")
-
-    def generate_problem(self) -> dict[str, Any]:
-        """Build a problem report for an invalid OPL map."""
-        return _stub("generate_problem")
-
-    def save_problem(self, problem: str | None = None) -> dict[str, Any]:
-        """Persist the problem to MongoDB."""
-        return self._db.save_problem(problem=problem)
+        start_message("CodeEvaluatorTools", "generate_pass_evaluation")
+        
+        success_message("CodeEvaluatorTools", "generate_pass_evaluation")
+        return code_evaluation["overall_score"] >= pass_metrics
 
     def adk_tools(self) -> list[Callable[..., dict[str, Any]]]:
         return [
@@ -173,8 +228,6 @@ class CodeEvaluatorTools:
             self.generate_code_evaluation,
             self.get_pass_metrics,
             self.generate_pass_evaluation,
-            self.generate_problem,
-            self.save_problem,
         ]
 
 
@@ -184,53 +237,98 @@ class OPLMapOptimizerTools:
     def __init__(self, db: DBconnection):
         self._db = db
 
-    def get_opl_pass(self) -> dict[str, Any]:
-        """Load OPL pass data from MongoDB."""
-        return self._db.get_opl_pass()
-
-    def check_code_passed(self) -> dict[str, Any]:
-        """Determine whether code already passed."""
-        return _stub("check_code_passed")
-
-    def mark_code_passed(self) -> dict[str, Any]:
+    def mark_code_passed(self, pass_evaluation: bool) -> bool:
         """Mark code as passed in MongoDB."""
-        return _stub("mark_code_passed")
+        start_message("OPLMapOptimizerTools", "mark_code_passed")
+        
+        # TODO: Mark code as passed in MongoDB
+
+        success_message("OPLMapOptimizerTools", "mark_code_passed")
+        return pass_evaluation
 
     def get_opl_evaluation(self) -> dict[str, Any]:
-        """Fetch evaluation data for optimization."""
-        return _stub("get_opl_evaluation")
+        """Fetch evaluation data from MongoDB."""
+        start_message("OPLMapOptimizerTools", "get_opl_evaluation")
 
-    def get_opl_optimization(self) -> dict[str, Any]:
-        """Fetch optimization suggestions."""
-        return _stub("get_opl_optimization")
+        # TODO: Get evaluation data from MongoDB
 
-    def optimize_opl_map(self) -> dict[str, Any]:
+        success_message("OPLMapOptimizerTools", "get_opl_evaluation")
+        return evaluation_example
+
+    def get_opl_optimization(self) -> list[str]:
+        """Fetch optimization from Local Storage."""
+        start_message("OPLMapOptimizerTools", "get_opl_optimization")
+        
+        # TODO: Get optimization from Local Storage
+
+        success_message("OPLMapOptimizerTools", "get_opl_optimization")
+        return optimization_example.copy()
+
+    def optimize_opl_map(self, opl_map: dict[str, Any], optimization: list[str]) -> dict[str, Any]:
         """Apply optimization to the OPL map."""
-        return _stub("optimize_opl_map")
+        start_message("OPLMapOptimizerTools", "optimize_opl_map")
+        
+        gemini = CONFIG["gemini"]
+        api_key = gemini.get("api_key")
+        model = gemini.get("model")
 
-    def validate_opl_map(self) -> dict[str, Any]:
+        if not api_key:
+            return {
+                "status": "error",
+                "message": "GEMINI_API_KEY is not configured",
+            }
+
+        try:
+            from google import genai
+
+            client = genai.Client(api_key=api_key)
+            response = client.models.generate_content(
+                model=model,
+                contents=_optimize_prompt(opl_map, optimization),
+                config={"temperature": 0.2},
+            )
+            raw = getattr(response, "text", None) or ""
+            opl_map = json.loads(raw)
+            if not opl_map:
+                error_message("OPLMapOptimizerTools", "optimize_opl_map")
+
+                return {
+                    "status": "error",
+                    "message": "Gemini returned empty opl map",
+                }
+
+            # TODO: Save optimized opl map to Local Storage
+
+            success_message("OPLMapOptimizerTools", "optimize_opl_map")
+            return {"status": "success", "opl_map": opl_map}
+        except ImportError:
+            error_message("OPLMapOptimizerTools", "optimize_opl_map")
+            
+            return {
+                "status": "error",
+                "message": "google-genai not installed (install google-adk)",
+            }
+        except Exception as exc:
+            error_message("OPLMapOptimizerTools", "optimize_opl_map")
+            
+            return {"status": "error", "message": str(exc)}
+
+    def validate_opl_map(self, opl_map: dict[str, Any]) -> bool:
         """Check whether the optimized OPL map is valid."""
-        return _stub("validate_opl_map")
+        start_message("OPLMapOptimizerTools", "validate_opl_map")
+        
+        # TODO: Validate opl map
 
-    def generate_problem(self) -> dict[str, Any]:
-        """Build a problem report when max optimization attempts are reached."""
-        return _stub("generate_problem")
-
-    def save_problem(self, problem: str | None = None) -> dict[str, Any]:
-        """Persist the problem to MongoDB."""
-        return self._db.save_problem(problem=problem)
+        success_message("OPLMapOptimizerTools", "validate_opl_map")
+        return True
 
     def adk_tools(self) -> list[Callable[..., dict[str, Any]]]:
         return [
-            self.get_opl_pass,
-            self.check_code_passed,
             self.mark_code_passed,
             self.get_opl_evaluation,
             self.get_opl_optimization,
             self.optimize_opl_map,
             self.validate_opl_map,
-            self.generate_problem,
-            self.save_problem,
         ]
 
 
@@ -243,25 +341,31 @@ class SupervisorTools:
 
     def get_training_opl(self) -> dict[str, Any]:
         """Load training OPL from MongoDB (training mode)."""
-
+        start_message("SupervisorTools", "get_training_opl")
+        
         # TODO: Get training OPL from MongoDB
         # TODO: Save opl to Local Storage
 
+        success_message("SupervisorTools", "get_training_opl")
         return [demo1, demo2]
 
     def get_user_opl(self) -> dict[str, Any]:
         """Resolve user-provided OPL."""
-
+        start_message("SupervisorTools", "get_user_opl")
+        
         # TODO: Get user OPL from MongoDB
         # TODO: Save opl to Local Storage
 
+        success_message("SupervisorTools", "get_user_opl")
         return demo1
 
     def generate_problem(self, message: str) -> dict[str, Any]:
         """Build the final problem before finishing the run."""
-
+        start_message("SupervisorTools", "generate_problem")
+        
         # TODO: Generate problem
 
+        success_message("SupervisorTools", "generate_problem")
         return {
             "status": "failure",
             "message": message,
@@ -269,9 +373,11 @@ class SupervisorTools:
 
     def save_problem(self, problem: str | None = None) -> dict[str, Any]:
         """Persist the problem to MongoDB."""
-
+        start_message("SupervisorTools", "save_problem")
+        
         # TODO: Save problem to MongoDB
 
+        success_message("SupervisorTools", "save_problem")
         return {
             "status": "success",
             "message": "Problem saved successfully",
