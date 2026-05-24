@@ -18,9 +18,9 @@ from google.adk.agents import Agent
 from google.adk.runners import Runner
 from google.adk.sessions import InMemorySessionService
 
-from memory import DBconnection
-from roles import agent_description, agent_instruction
-from tools import AgentTools
+from .memory import DBconnection
+from .roles import agent_description, agent_instruction
+from .tools import AgentTools
 
 APP_NAME = "model_based_codegen"
 DEFAULT_MODEL = os.getenv("GEMINI_MODEL", "gemini-2.5-flash")

@@ -9,16 +9,8 @@ import sys
 from pathlib import Path
 
 from flask import Blueprint, jsonify
-
+from flask import request
 from messages import error_message, start_message, success_message
-
-_APPSERVER_DIR = Path(__file__).resolve().parents[1]
-_AGENT_DIR = _APPSERVER_DIR / "agent"
-
-for _path in (_APPSERVER_DIR, _AGENT_DIR):
-    _entry = str(_path)
-    if _entry not in sys.path:
-        sys.path.insert(0, _entry)
 
 agentAPI = Blueprint("agentAPI", __name__, url_prefix="/agent")
 
@@ -31,7 +23,7 @@ def index():
     start_message("agent", "Health check")
 
     try:
-        from health import check_agent_health
+        from agent.health import check_agent_health
 
         health = check_agent_health()
     except Exception as exc:
@@ -57,3 +49,27 @@ def index():
 
     error_message("agent", f"Agent unhealthy: {health['checks']}")
     return jsonify(answer), 503
+
+
+@agentAPI.get("/generate")
+def generate():
+    """
+        Generate code from the OPL
+    """
+
+    # TODO: Generate code from the OPL
+
+    return jsonify({"message": "Generated code"}), 200
+    
+@agentAPI.get("/example")
+def example():
+    """
+        Get an example OPL
+    """
+    from agent.memory import DBconnection
+    from agent.tools import CodeGeneratorTools
+    from agent.logic_map_example import logic_map_example
+    from agent.opl_examples import demo1
+
+    tools = CodeGeneratorTools(DBconnection.from_config())
+    return jsonify(tools.generate_code(logic_map_example, demo1)), 200

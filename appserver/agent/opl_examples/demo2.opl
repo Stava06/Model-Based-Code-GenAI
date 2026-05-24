@@ -1,0 +1,10 @@
+1. Coffee Machine consists of Water Tank, Coffee Beans, Cup, and Heater.
+2. Water Tank can be empty or full.
+3. Cup can be empty or filled.
+4. Coffee Making is a process.
+
+5. User is the agent of Coffee Making.
+6. Water Tank and Coffee Beans are instruments of Coffee Making.
+7. Coffee Making changes Cup from empty to filled.
+8. Coffee Making consumes Coffee Beans.
+9. Coffee Making requires Water Tank to be full.
