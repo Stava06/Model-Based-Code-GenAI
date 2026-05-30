@@ -4,7 +4,7 @@
     Architecture:
         LLM (Gemini) -> Roles (instruction + session.current_role) -> Tools -> Memory (MongoDB)
 
-    One agent switches between Supervisor, Generator, Critic, and Optimizer behaviors
+    One agent switches between Supervisor, Generator, and Critic behaviors
     via session.state and the unified instruction in roles.agent_instruction.
 
     Exports ``root_agent`` for ADK CLI / web discovery.
@@ -30,8 +30,6 @@ def build_agent(
     db: DBconnection | None = None,
     *,
     max_itr: int = 10,
-    max_gnr: int = 10,
-    max_opt: int = 10,
     training_mode: bool = False,
 ) -> Agent:
     """
@@ -40,8 +38,6 @@ def build_agent(
     Args:
         db: MongoDB access layer; created from config if omitted.
         max_itr: Supervisor iteration cap.
-        max_gnr: Generator attempt cap.
-        max_opt: Optimizer attempt cap.
         training_mode: Default training_mode in instructions.
     """
     db = db or DBconnection.from_config()
@@ -53,8 +49,6 @@ def build_agent(
         description=agent_description(),
         instruction=agent_instruction(
             max_itr=max_itr,
-            max_gnr=max_gnr,
-            max_opt=max_opt,
             training_mode=training_mode,
         ),
         tools=tools.adk_tools(),
@@ -65,16 +59,12 @@ def create_runner(
     db: DBconnection | None = None,
     *,
     max_itr: int = 10,
-    max_gnr: int = 10,
-    max_opt: int = 10,
     training_mode: bool = False,
 ) -> Runner:
     """Create an ADK Runner with in-memory sessions (swap for Mongo SessionService later)."""
     agent = build_agent(
         db=db,
         max_itr=max_itr,
-        max_gnr=max_gnr,
-        max_opt=max_opt,
         training_mode=training_mode,
     )
     session_service = InMemorySessionService()

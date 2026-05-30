@@ -1,6 +1,6 @@
 from flask import Flask, jsonify
 from flask_cors import CORS
-from api.agent import agentAPI
+from api.agent_api import agentAPI
 from api.users import userAPI
 from config import Config
 from extensions import init_mongo
@@ -51,12 +51,22 @@ init_mongo(app)
 
 
 if __name__ == "__main__":
+    import socket
+
     # Initialize the MongoDB extension
     init_mongo(app)
 
+    port = int(CONFIG["server"]["port"])
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as probe:
+        if probe.connect_ex(("127.0.0.1", port)) == 0:
+            print(
+                f"WARNING: port {port} is already in use. "
+                "Stop other python app.py processes or downloads may hit stale code."
+            )
+
     # Run the app
     app.run(
-        host="0.0.0.0", 
-        port=CONFIG["server"]["port"], 
-        debug=CONFIG["server"]["debug"]
+        host="0.0.0.0",
+        port=port,
+        debug=CONFIG["server"]["debug"],
     )

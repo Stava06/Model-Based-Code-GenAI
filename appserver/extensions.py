@@ -17,12 +17,14 @@ def init_mongo(app) -> None:
     # Get the database configuration
     uri = CONFIG["database"]["uri"]
     db_name = CONFIG["database"]["name"]
-    coll_name = CONFIG["database"]["user_collection"]
+    user_coll_name = CONFIG["database"]["user_collection"]
+    code_coll_name = CONFIG["database"]["code_collection"]
 
     # Check if the database configuration is missing
-    if uri is None or db_name is None or coll_name is None:
+    if uri is None or db_name is None or user_coll_name is None:
         error_message('mongo', "Database configuration is missing")
         app.extensions["users_collection"] = None
+        app.extensions["code_collection"] = None
         return
 
     # Try to connect to the database
@@ -32,10 +34,12 @@ def init_mongo(app) -> None:
 
         # Set the 
         db = client[db_name]
-        app.extensions["users_collection"] = db[coll_name]
+        app.extensions["users_collection"] = db[user_coll_name]
+        app.extensions["code_collection"] = db[code_coll_name]
 
         success_message('mongo', "MongoDB initialized successfully")
         return
     except Exception as e:
         error_message('mongo', f"Error initializing MongoDB: {e}")
         app.extensions["users_collection"] = None
+        app.extensions["code_collection"] = None

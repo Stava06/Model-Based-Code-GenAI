@@ -36,7 +36,8 @@ class Config:
             "database": {
                 "uri": os.getenv("MONGO_URL"),
                 "name": os.getenv("MONGO_DB"),
-                "user_collection": os.getenv("MONGO_COLLECTION"),
+                "user_collection": os.getenv("MONGO_USER_COLLECTION"),
+                "code_collection": os.getenv("MONGO_CODE_COLLECTION"),
             },
             "server": {
                 "port": os.getenv("PORT") or 5000,

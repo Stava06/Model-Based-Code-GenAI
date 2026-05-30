@@ -10,13 +10,27 @@ from pymongo import MongoClient
 from pymongo.database import Database
 
 from config import CONFIG
-
+from flask import current_app
+from messages import error_message
 
 class DBconnection:
     """MongoDB repository used by Code Generator, Evaluator, and Optimizer tools."""
 
     def __init__(self, db: Database | None = None):
         self._db = db
+
+    def _code_collection(self):
+        """
+            Get the code collection
+        """
+        conn = current_app.extensions.get("code_collection")
+
+        # Check if the database is configured
+        if conn is None:
+            error_message('code', "Database not configured")
+            return None
+
+        return conn
 
     @classmethod
     def from_config(cls) -> "DBconnection":
@@ -64,7 +78,13 @@ class DBconnection:
         """Persist generated code to MongoDB."""
         if self._db is None:
             return self._not_ready()
-        return {"status": "not_implemented"}
+
+        code_conn = self._code_collection()
+        if code_conn is None:
+            return {"status": "error", "message": "Code collection not configured"}
+
+        code_conn.insert_one({"code": code})
+        return {"status": "success", "message": "Code saved successfully"}
 
     def get_opl_map(self) -> dict[str, Any]:
         """Load OPL map from MongoDB."""
