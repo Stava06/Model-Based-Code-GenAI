@@ -1,46 +1,119 @@
-1. Smart Home Climate Control System consists of Temperature Sensor, Room, HVAC Unit, User Preference, Energy Mode, and Climate Controller.
+1. Smart Home Climate Control System consists of Temperature Sensor, Humidity Sensor, Occupancy Sensor, Weather Service, Room, HVAC Unit, User Preference, Energy Mode, Schedule, Alert System, Maintenance Module, Learning Module, and Climate Controller.
 2. Room exhibits Current Temperature.
 3. User Preference exhibits Desired Temperature.
 4. Energy Mode can be normal or eco.
-
 5. HVAC Unit can be idle, heating, or cooling.
+
 6. Room can be comfortable, too cold, or too hot.
 7. Temperature Sensing is a process.
 8. Temperature Sensor is the instrument of Temperature Sensing.
 9. Temperature Sensing yields Current Temperature.
-
 10. Comfort Evaluating is a process.
+
 11. Climate Controller is the agent of Comfort Evaluating.
 12. Current Temperature and Desired Temperature are instruments of Comfort Evaluating.
 13. Comfort Evaluating changes Room from comfortable to too cold when Current Temperature is lower than Desired Temperature.
 14. Comfort Evaluating changes Room from comfortable to too hot when Current Temperature is higher than Desired Temperature.
-
 15. Comfort Evaluating keeps Room comfortable when Current Temperature equals Desired Temperature.
+
 16. Heating Activating is a process.
 17. Climate Controller is the agent of Heating Activating.
 18. HVAC Unit is the instrument of Heating Activating.
 19. Heating Activating changes HVAC Unit from idle to heating.
-
 20. Heating Activating requires Room to be too cold.
+
 21. Cooling Activating is a process.
 22. Climate Controller is the agent of Cooling Activating.
 23. HVAC Unit is the instrument of Cooling Activating.
 24. Cooling Activating changes HVAC Unit from idle to cooling.
-
 25. Cooling Activating requires Room to be too hot.
+
 26. HVAC Stopping is a process.
 27. Climate Controller is the agent of HVAC Stopping.
 28. HVAC Unit is the instrument of HVAC Stopping.
 29. HVAC Stopping changes HVAC Unit from heating to idle when Room is comfortable.
-
 30. HVAC Stopping changes HVAC Unit from cooling to idle when Room is comfortable.
+
 31. Eco Mode Applying is a process.
 32. Climate Controller is the agent of Eco Mode Applying.
 33. Energy Mode is the instrument of Eco Mode Applying.
 34. Eco Mode Applying changes Energy Mode from normal to eco.
-
 35. Eco Mode Applying reduces HVAC Unit activity.
+
 36. User Configuring is a process.
 37. User is the agent of User Configuring.
 38. User Configuring affects User Preference.
 39. User Configuring updates Desired Temperature.
+40. Humidity Sensor exhibits Current Humidity.
+
+41. Humidity Sensing is a process.
+42. Humidity Sensor is the instrument of Humidity Sensing.
+43. Humidity Sensing yields Current Humidity.
+44. Room can be dry, optimal humidity, or humid.
+45. Humidity Evaluating is a process.
+
+46. Climate Controller is the agent of Humidity Evaluating.
+47. Current Humidity is the instrument of Humidity Evaluating.
+48. Humidity Evaluating changes Room from optimal humidity to dry when Current Humidity is below threshold.
+49. Humidity Evaluating changes Room from optimal humidity to humid when Current Humidity is above threshold.
+50. Occupancy Sensor exhibits Occupancy Status.
+
+51. Occupancy Status can be occupied or vacant.
+52. Occupancy Detecting is a process.
+53. Occupancy Sensor is the instrument of Occupancy Detecting.
+54. Occupancy Detecting yields Occupancy Status.
+55. Schedule exhibits Scheduled Temperature.
+
+56. Schedule can be active or inactive.
+57. Schedule Executing is a process.
+58. Climate Controller is the agent of Schedule Executing.
+59. Schedule is the instrument of Schedule Executing.
+60. Schedule Executing updates Desired Temperature.
+
+61. Schedule Executing requires Schedule to be active.
+62. Weather Service exhibits Outdoor Temperature.
+63. Weather Service exhibits Weather Forecast.
+64. Weather Retrieving is a process.
+65. Weather Service is the instrument of Weather Retrieving.
+
+66. Weather Retrieving yields Outdoor Temperature.
+67. Weather Retrieving yields Weather Forecast.
+68. Predictive Adjusting is a process.
+69. Climate Controller is the agent of Predictive Adjusting.
+70. Weather Forecast is the instrument of Predictive Adjusting.
+
+71. Predictive Adjusting updates Desired Temperature before expected weather changes.
+72. Energy Saving Evaluating is a process.
+73. Climate Controller is the agent of Energy Saving Evaluating.
+74. Occupancy Status and Energy Mode are instruments of Energy Saving Evaluating.
+75. Energy Saving Evaluating lowers Desired Temperature when Room is vacant during winter.
+
+76. Energy Saving Evaluating raises Desired Temperature when Room is vacant during summer.
+77. HVAC Unit exhibits Energy Consumption.
+78. Energy Monitoring is a process.
+79. Climate Controller is the agent of Energy Monitoring.
+80. Energy Monitoring yields Energy Consumption.
+
+81. Alert System can be inactive or active.
+82. Temperature Alerting is a process.
+83. Alert System is the instrument of Temperature Alerting.
+84. Temperature Alerting changes Alert System from inactive to active when Current Temperature exceeds safety limits.
+85. Temperature Alerting notifies User.
+
+86. Maintenance Module can be normal or service required.
+87. Filter Monitoring is a process.
+88. Maintenance Module is the instrument of Filter Monitoring.
+89. Filter Monitoring changes Maintenance Module from normal to service required when HVAC runtime exceeds maintenance threshold.
+90. Maintenance Alerting is a process.
+
+91. Maintenance Alerting notifies User.
+92. Learning Module exhibits Usage Pattern.
+93. Usage Learning is a process.
+94. Learning Module is the instrument of Usage Learning.
+95. User Preference and Occupancy Status are instruments of Usage Learning.
+
+96. Usage Learning yields Usage Pattern.
+97. Adaptive Optimization is a process.
+98. Climate Controller is the agent of Adaptive Optimization.
+99. Usage Pattern is the instrument of Adaptive Optimization.
+100. Adaptive Optimization updates Desired Temperature automatically according to learned user behavior.

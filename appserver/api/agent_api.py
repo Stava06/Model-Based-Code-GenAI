@@ -14,7 +14,12 @@ from google.genai import types
 from messages import error_message, start_message, success_message
 from agent.agent import APP_NAME, create_runner
 from agent.opl_examples import demo1
-from agent.tools import get_project_zip_from_state, _is_valid_project_zip, zip_entry_names
+from agent.tools import (
+    get_project_download_name,
+    get_project_zip_from_state,
+    _is_valid_project_zip,
+    zip_entry_names,
+)
 
 agentAPI = Blueprint("agentAPI", __name__, url_prefix="/agent")
 
@@ -62,14 +67,13 @@ def generate():
 
         Query params (optional):
             opl: OPL source text (defaults to demo1)
-            filename: download filename (default: generated_code.zip)
+            filename: download filename (defaults to agent-chosen project slug, or generated_code.zip)
     """
     start_message("agent", "Generate code zip")
 
     opl = request.args.get("opl") or demo1
-    filename = request.args.get("filename", "generated_code.zip")
-    if not filename.lower().endswith(".zip"):
-        filename = f"{filename}.zip"
+    filename = request.args.get("filename")
+    default_filename = "generated_code.zip"
 
     try:
         runner = create_runner(max_itr=1)
@@ -91,10 +95,11 @@ def generate():
             parts=[
                 types.Part(
                     text=(
-                        "Operational mode: get OPL, hand off to Generator, run generate_code "
+                        "Operational mode: get OPL, hand off to Generator, choose a project name "
+                        "from the OPL (set_project_name), run generate_code "
                         "(fullstack: React frontend/ with src/service.js + axios, "
                         "Flask backend/ with CORS API routes, in a zip), "
-                        "save_generated_code, then finish."
+                        "save_generated_code, then call finish_and_return_user before finishing."
                     )
                 )
             ],
@@ -117,13 +122,18 @@ def generate():
                 "message": "Agent session not found",
             }), 500
 
+        if not filename:
+            filename = get_project_download_name(session.state, default_filename)
+        if not filename.lower().endswith(".zip"):
+            filename = f"{filename}.zip"
+
         zip_b64 = get_project_zip_from_state(session.state)
         if not zip_b64:
             return jsonify({
                 "success": False,
                 "message": (
                     "No valid project zip in session — ensure the agent completed "
-                    "generate_code before finish"
+                    "generate_code and finish_and_return_user before finish"
                 ),
             }), 500
 

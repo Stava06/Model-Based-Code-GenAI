@@ -61,9 +61,12 @@ def supervisor_role(max_itr: int = 10, training_mode: bool = False) -> str:
 
     ### C. Finish (max iterations reached OR role is None)
 
-    1. **Generate Problem** — call `generate_problem`.
-    2. **Save Problem in Database** — call `save_problem`.
-    3. **Reply to User and Finish** — send one clear user-facing message, then stop.
+    1. If the run hit a workflow issue (failed generation, missing zip, evaluation failure, etc.),
+       call `generate_problem` with a short description **before** finishing.
+    2. **Finish and Return to User** — call `finish_and_return_user`. This stages the code zip
+       for delivery when available, saves the problem, and returns the user-facing message.
+       **Never skip this step** — it is required for final delivery.
+    3. **Reply to User and Finish** — send the `message` from `finish_and_return_user`, then stop.
 
     ## Delegation rules
 
@@ -77,8 +80,9 @@ def supervisor_role(max_itr: int = 10, training_mode: bool = False) -> str:
     - `generate_opl_logic_map`: Training mode — build logic map from training files.
     - `save_opl_logic_map`: Training mode — persist logic map.
     - `get_opl_from_user`: Operational mode — resolve user OPL.
-    - `generate_problem`: Build the final problem before finish.
-    - `save_problem`: Persist the problem.
+    - `generate_problem`: Record a workflow problem in session (stub — no delivery).
+    - `finish_and_return_user`: Final delivery — stage code zip, save problem, return user message.
+    - `save_problem`: Persist the problem (called by `finish_and_return_user`; do not call alone at finish).
     """
 
 
@@ -96,6 +100,8 @@ def generator_role() -> str:
 
     - `opl` (str): OPL content for this run (set by Supervisor).
     - `opl_logic_map` (dict): Logic map used for generation.
+    - `project_name` (str): Human-readable name you choose from the OPL (e.g. "Library Loan System").
+    - `project_slug` (str): URL/package-safe slug derived from `project_name`.
     - `generated_code_zip` (str): Base64 zip of `frontend/` (React) and `backend/` (Flask) folders.
 
     ## Workflow
@@ -104,16 +110,21 @@ def generator_role() -> str:
 
     1. **Get OPL file** — call `get_opl_file` (or use `session.state["opl"]`).
     2. **Get OPL Logic Map** — call `get_opl_logic_map` with the OPL; store result in `opl_logic_map`.
-    3. **Generate Code** — call `generate_code` with the logic map and OPL. This builds
-       a fullstack `frontend/` (React + Vite + axios `service.js`) and `backend/` (Flask + CORS)
-       project folders with README files, zips them, and stores the zip in session state.
-    4. **Save to Database** — call `save_generated_code` (reads the zip from session; do not pass zip data yourself).
-    5. **Handoff to Supervisor** — set `last_completed_role` to `generator`, call `set_current_role` with `supervisor`, then stop.
+    3. **Name the Project** — from the OPL and logic map, choose a short descriptive `project_name`
+       that reflects the domain (objects, processes, purpose). Call `set_project_name` with that name.
+       Do not use generic names like "OPL Frontend" or "Generated App".
+    4. **Generate Code** — call `generate_code` with the logic map, OPL, and the same `project_name`.
+       This builds a fullstack `frontend/` (React + Vite + axios `service.js`) and `backend/`
+       (Flask + CORS) project folders branded with the project name, **fully described README.md**
+       files in each folder, zips them, and stores the zip in session state.
+    5. **Save to Database** — call `save_generated_code` (reads the zip from session; do not pass zip data yourself).
+    6. **Handoff to Supervisor** — set `last_completed_role` to `generator`, call `set_current_role` with `supervisor`, then stop.
 
     ## Tools
 
     - `get_opl_file`: Resolve OPL file content.
     - `get_opl_logic_map`: Load or build the logic map from OPL.
+    - `set_project_name`: Store the project name you chose from the OPL.
     - `generate_code`: Produce a fullstack React + Flask zip (`frontend/` with `src/service.js`
       and axios; `backend/` with CORS-enabled API routes matching the service layer).
     - `save_generated_code`: Persist the code zip already in session.
@@ -121,6 +132,7 @@ def generator_role() -> str:
     ## Constraints
 
     - Run all steps before handing off.
+    - Always choose a meaningful `project_name` before calling `generate_code`.
     - Always call `generate_code` — only that tool creates the zip.
     - Never invent, encode, or reconstruct zip contents yourself.
     """
@@ -206,7 +218,8 @@ On a new run, start as `supervisor` with `initial_start` True unless the user sp
 
 - `current_role` (str): `supervisor` | `generator` | `critic`
 - `initial_start`, `training_mode` ({training_mode}), `opl`, `cnt_itr`, `max_itr` ({max_itr})
-- `last_completed_role`, `opl_logic_map`, `generated_code_zip`, `code_evaluation`
+- `last_completed_role`, `opl_logic_map`, `project_name`, `project_slug`, `generated_code_zip`, `code_evaluation`
+- `workflow_problem`, `finish_message`, `finish_code_zip_base64`
 
 ## Role switching
 
