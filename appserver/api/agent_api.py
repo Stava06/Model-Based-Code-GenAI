@@ -14,7 +14,7 @@ from google.genai import types
 from messages import error_message, start_message, success_message
 from agent.agent import APP_NAME, create_runner
 from agent.opl_examples import demo1
-from agent.tools import ensure_project_zip_in_state, _is_valid_project_zip, zip_entry_names
+from agent.tools import get_project_zip_from_state, _is_valid_project_zip, zip_entry_names
 
 agentAPI = Blueprint("agentAPI", __name__, url_prefix="/agent")
 
@@ -92,7 +92,8 @@ def generate():
                 types.Part(
                     text=(
                         "Operational mode: get OPL, hand off to Generator, run generate_code "
-                        "(React frontend/ folder + Flask backend/ folder in a zip), "
+                        "(fullstack: React frontend/ with src/service.js + axios, "
+                        "Flask backend/ with CORS API routes, in a zip), "
                         "save_generated_code, then finish."
                     )
                 )
@@ -116,11 +117,14 @@ def generate():
                 "message": "Agent session not found",
             }), 500
 
-        zip_b64 = ensure_project_zip_in_state(session.state, opl)
+        zip_b64 = get_project_zip_from_state(session.state)
         if not zip_b64:
             return jsonify({
                 "success": False,
-                "message": "Could not build frontend/ and backend/ project zip",
+                "message": (
+                    "No valid project zip in session — ensure the agent completed "
+                    "generate_code before finish"
+                ),
             }), 500
 
         zip_bytes = base64.b64decode(zip_b64)

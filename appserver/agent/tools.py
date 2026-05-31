@@ -8,7 +8,7 @@ import json
 import re
 import zipfile
 from collections.abc import Callable
-from typing import Any, Literal
+from typing import Any
 from google.adk.tools import ToolContext
 from config import CONFIG
 from .memory import DBconnection
@@ -34,27 +34,9 @@ def _gemini_api_keys() -> list[str]:
     return keys
 
 
-def _codegen_folder_prompt(
-    part: Literal["frontend", "backend"],
-    opl_logic_map: dict[str, Any],
-    opl: str,
-) -> str:
-    if part == "frontend":
-        stack = """\
-- **React + Vite** project (not plain HTML or Python).
-- Runnable with: `cd frontend && npm run dev` (`predev` must run `npm install` first).
-- Required files: `README.md`, `package.json`, `index.html`, `vite.config.js`,
-  `src/main.jsx`, `src/App.jsx` (JSX using React components).
-- Reflect OPL objects/processes in the React UI."""
-    else:
-        stack = """\
-- **Python Flask** project (not Node or plain scripts).
-- Runnable with: `cd backend && python app.py` (must pip install from `requirements.txt` first).
-- Required files: `README.md`, `app.py`, `requirements.txt` (include `flask`).
-- `app.py` must define a Flask app and call `_install_dependencies()` before `app.run()` in `__main__`.
-- Expose minimal routes reflecting OPL objects/processes."""
-
-    return f"""Build a minimal, executable {part} project from the OPL specification.
+def _codegen_project_prompt(opl_logic_map: dict[str, Any], opl: str) -> str:
+    return f"""Build a minimal, executable **fullstack website** from the OPL specification.
+The React frontend and Flask backend must be wired together: UI actions call the backend over HTTP.
 
 ## OPL logic map (JSON)
 {json.dumps(opl_logic_map, indent=2)}
@@ -62,40 +44,79 @@ def _codegen_folder_prompt(
 ## OPL specification
 {opl.strip()}
 
-## Stack (mandatory)
-{stack}
+## Fullstack integration (mandatory)
+- Frontend runs on Vite (default port 5173); backend runs on Flask (port 5000).
+- Every data mutation or read in the UI goes through `src/service.js` using **axios** — never call
+  `fetch` or axios directly from React components.
+- `src/service.js` exports async functions (one per backend operation) that use axios against
+  `const API_URL = import.meta.env.VITE_API_URL || "http://localhost:5000"`.
+- Backend routes must match the paths and HTTP methods used in `service.js` (prefer `/api/...` prefixes).
+- Enable **CORS** on the Flask app so the Vite dev server can call the API cross-origin.
+- React components import from `./service.js` and use its functions in `useEffect`, event handlers, etc.
+- The generated app must work when the user runs backend first, then frontend.
+
+## frontend (mandatory stack)
+- **React + Vite** project (not plain HTML or Python).
+- Runnable with: `cd frontend && npm run dev` (`predev` must run `npm install` first).
+- Required files: `README.md`, `package.json`, `index.html`, `vite.config.js`,
+  `src/main.jsx`, `src/App.jsx`, **`src/service.js`**.
+- `package.json` must list **`axios`** in `dependencies`.
+- Optional but recommended: `.env` with `VITE_API_URL=http://localhost:5000`.
+- Reflect OPL objects/processes in the React UI; load and submit data via `service.js`.
+
+## backend (mandatory stack)
+- **Python Flask** project (not Node or plain scripts).
+- Runnable with: `cd backend && python app.py` (must pip install from `requirements.txt` first).
+- Required files: `README.md`, `app.py`, `requirements.txt` (include **`flask`** and **`flask-cors`**).
+- `app.py` must: import `CORS` from `flask_cors`, create `app = Flask(__name__)`, call `CORS(app)`
+  immediately after app creation, define JSON API routes matching `service.js`, and call
+  `_install_dependencies()` before `app.run(host="0.0.0.0", port=5000, debug=True)` in `__main__`.
+- Expose REST routes reflecting OPL objects/processes (GET list/detail, POST create, etc. as needed).
 
 Return **only** JSON (no markdown):
 {{
-  "files": {{
-    "relative/path": "file contents",
-    "README.md": "..."
+  "frontend": {{
+    "files": {{
+      "relative/path": "file contents",
+      "README.md": "..."
+    }}
+  }},
+  "backend": {{
+    "files": {{
+      "relative/path": "file contents",
+      "README.md": "..."
+    }}
   }}
 }}
 
-Paths are relative to the `{part}/` folder (do not prefix keys with `{part}/`).
-Include every file needed to run the project.
+Paths in each `files` map are relative to that folder (do not prefix keys with `frontend/` or `backend/`).
+Include every file needed to run the fullstack app (both projects connected via axios + CORS).
 """
 
 
 FRONTEND_README = """# Frontend (React + Vite)
+
+Fullstack app — start the **backend** first (port 5000), then this frontend.
 
 ```bash
 cd frontend
 npm run dev
 ```
 
-`npm run dev` runs `npm install` first (via `predev`), then starts Vite.
+`npm run dev` runs `npm install` first (via `predev`), then starts Vite on port 5173.
+API calls go through `src/service.js` (axios) to `VITE_API_URL` or `http://localhost:5000`.
 """
 
 BACKEND_README = """# Backend (Flask)
+
+Fullstack app — start this server **before** the frontend.
 
 ```bash
 cd backend
 python app.py
 ```
 
-`app.py` installs dependencies from `requirements.txt`, then starts Flask.
+`app.py` installs dependencies from `requirements.txt`, enables CORS, then starts Flask on port 5000.
 """
 
 _BACKEND_INSTALL_HELPER = '''
@@ -122,6 +143,7 @@ def _minimal_frontend_scaffold() -> dict[str, str]:
                 "type": "module",
                 "scripts": {"predev": "npm install", "dev": "vite"},
                 "dependencies": {
+                    "axios": "^1.7.0",
                     "react": "^18.3.1",
                     "react-dom": "^18.3.1",
                 },
@@ -163,11 +185,34 @@ ReactDOM.createRoot(document.getElementById('root')).render(
   </React.StrictMode>,
 )
 """,
-        "src/App.jsx": """export default function App() {
+        "src/service.js": """import axios from 'axios'
+
+const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000'
+
+export async function fetchStatus() {
+  const response = await axios.get(`${API_URL}/api/status`)
+  return response.data
+}
+""",
+        "src/App.jsx": """import { useEffect, useState } from 'react'
+import { fetchStatus } from './service.js'
+
+export default function App() {
+  const [status, setStatus] = useState(null)
+  const [error, setError] = useState(null)
+
+  useEffect(() => {
+    fetchStatus()
+      .then(setStatus)
+      .catch((err) => setError(err.message))
+  }, [])
+
   return (
     <main style={{ fontFamily: 'sans-serif', padding: '1rem' }}>
       <h1>OPL Frontend</h1>
-      <p>Generated React app — customize from OPL specification.</p>
+      <p>Generated fullstack app — customize from OPL specification.</p>
+      {error && <p style={{ color: 'crimson' }}>Backend: {error}</p>}
+      {status && <pre>{JSON.stringify(status, null, 2)}</pre>}
     </main>
   )
 }
@@ -177,15 +222,22 @@ ReactDOM.createRoot(document.getElementById('root')).render(
 
 def _minimal_backend_scaffold() -> dict[str, str]:
     return {
-        "requirements.txt": "flask\n",
+        "requirements.txt": "flask\nflask-cors\n",
         "app.py": '''from flask import Flask, jsonify
+from flask_cors import CORS
 
 app = Flask(__name__)
+CORS(app)
 
 
 @app.get("/")
 def index():
     return jsonify({"service": "opl-backend", "message": "ok"})
+
+
+@app.get("/api/status")
+def api_status():
+    return jsonify({"service": "opl-backend", "status": "ok"})
 
 
 if __name__ == "__main__":
@@ -210,16 +262,50 @@ def _ensure_frontend_bootstrap(files: dict[str, str]) -> None:
             scripts = pkg.setdefault("scripts", {})
             scripts.setdefault("dev", "vite")
             scripts["predev"] = "npm install"
+            deps = pkg.setdefault("dependencies", {})
+            deps.setdefault("axios", "^1.7.0")
             files["package.json"] = json.dumps(pkg, indent=2) + "\n"
         except json.JSONDecodeError:
             pass
+    files.setdefault(
+        "src/service.js",
+        """import axios from 'axios'
+
+const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000'
+
+export async function fetchStatus() {
+  const response = await axios.get(`${API_URL}/api/status`)
+  return response.data
+}
+""",
+    )
 
 
 def _ensure_backend_bootstrap(files: dict[str, str]) -> None:
     files["README.md"] = BACKEND_README
+    req = files.get("requirements.txt", "")
+    for package in ("flask", "flask-cors"):
+        if package not in req.lower():
+            req = req.rstrip() + ("\n" if req and not req.endswith("\n") else "") + f"{package}\n"
+    files["requirements.txt"] = req
     content = files.get("app.py", "")
     if not content:
         return
+    if "flask_cors" not in content and "CORS(app)" not in content:
+        if "from flask import" in content:
+            content = content.replace(
+                "from flask import",
+                "from flask_cors import CORS\nfrom flask import",
+                1,
+            )
+        elif "import flask" not in content.lower():
+            content = "from flask_cors import CORS\n" + content
+        if "app = Flask(__name__)" in content and "CORS(app)" not in content:
+            content = content.replace(
+                "app = Flask(__name__)",
+                "app = Flask(__name__)\nCORS(app)",
+                1,
+            )
     if "_install_dependencies" not in content:
         lines = content.splitlines()
         insert_at = 0
@@ -284,20 +370,7 @@ def zip_entry_names(zip_bytes: bytes) -> list[str]:
         return []
 
 
-def _parse_generated_files(raw: str, part: str) -> dict[str, Any]:
-    text = _strip_code_fences(raw)
-    try:
-        payload = json.loads(text)
-    except json.JSONDecodeError as exc:
-        return {"status": "error", "message": f"Invalid JSON for {part}: {exc}"}
-
-    files = payload.get("files") if isinstance(payload, dict) else None
-    if not isinstance(files, dict) or not files:
-        return {
-            "status": "error",
-            "message": f'Gemini must return a JSON object with a "files" map for {part}',
-        }
-
+def _normalize_files_map(files: dict[str, Any], part: str) -> dict[str, str]:
     normalized: dict[str, str] = {}
     for path, content in files.items():
         if not isinstance(path, str) or not isinstance(content, str):
@@ -305,11 +378,48 @@ def _parse_generated_files(raw: str, part: str) -> dict[str, Any]:
         clean = _normalize_project_path(path, part)
         if clean:
             normalized[clean] = content
+    return normalized
 
-    if not normalized:
-        return {"status": "error", "message": f"No valid files in {part} output"}
 
-    return {"status": "success", "files": normalized}
+def _files_from_part_section(section: Any, part: str) -> dict[str, str] | None:
+    if not isinstance(section, dict):
+        return None
+    files = section.get("files", section)
+    if not isinstance(files, dict) or not files:
+        return None
+    normalized = _normalize_files_map(files, part)
+    return normalized or None
+
+
+def _parse_generated_project(raw: str) -> dict[str, Any]:
+    text = _strip_code_fences(raw)
+    try:
+        payload = json.loads(text)
+    except json.JSONDecodeError as exc:
+        return {"status": "error", "message": f"Invalid JSON for project: {exc}"}
+
+    if not isinstance(payload, dict):
+        return {"status": "error", "message": "Gemini must return a JSON object"}
+
+    frontend_files = _files_from_part_section(payload.get("frontend"), "frontend")
+    backend_files = _files_from_part_section(payload.get("backend"), "backend")
+    errors: list[str] = []
+    if not frontend_files:
+        errors.append("missing or empty frontend.files")
+    if not backend_files:
+        errors.append("missing or empty backend.files")
+    if errors:
+        return {
+            "status": "error",
+            "message": "Gemini must return frontend and backend file maps: "
+            + "; ".join(errors),
+        }
+
+    return {
+        "status": "success",
+        "frontend_files": frontend_files,
+        "backend_files": backend_files,
+    }
 
 
 def _zip_project_folders(
@@ -335,8 +445,7 @@ def _zip_project_folders(
     return buf.getvalue()
 
 
-def _call_gemini_for_folder(
-    part: Literal["frontend", "backend"],
+def _call_gemini_for_project(
     opl_logic_map: dict[str, Any],
     opl: str,
 ) -> dict[str, Any]:
@@ -357,45 +466,46 @@ def _call_gemini_for_folder(
             client = genai.Client(api_key=api_key)
             response = client.models.generate_content(
                 model=model,
-                contents=_codegen_folder_prompt(part, opl_logic_map, opl),
+                contents=_codegen_project_prompt(opl_logic_map, opl),
                 config={"temperature": 0.2, "response_mime_type": "application/json"},
             )
             raw = getattr(response, "text", None) or ""
-            parsed = _parse_generated_files(raw, part)
+            parsed = _parse_generated_project(raw)
             if parsed.get("status") == "success":
                 return parsed
-            errors.append(parsed.get("message", f"Failed to parse {part}"))
+            errors.append(parsed.get("message", "Failed to parse project"))
         except Exception as exc:
             errors.append(str(exc))
 
     return {
         "status": "error",
-        "message": errors[-1] if errors else f"Gemini failed for {part}",
+        "message": errors[-1] if errors else "Gemini failed for project",
     }
 
 
-def _build_project_files(
-    part: Literal["frontend", "backend"],
+def _build_project_folders(
     opl_logic_map: dict[str, Any],
     opl: str,
-) -> dict[str, str] | None:
-    scaffold = (
-        _minimal_frontend_scaffold()
-        if part == "frontend"
-        else _minimal_backend_scaffold()
-    )
-    result = _call_gemini_for_folder(part, opl_logic_map, opl)
+) -> tuple[dict[str, str], dict[str, str]]:
+    frontend_scaffold = _minimal_frontend_scaffold()
+    backend_scaffold = _minimal_backend_scaffold()
+    result = _call_gemini_for_project(opl_logic_map, opl)
     if result.get("status") == "success":
-        files = _merge_files(scaffold, result["files"])
+        frontend_files = _merge_files(
+            frontend_scaffold, result["frontend_files"]
+        )
+        backend_files = _merge_files(backend_scaffold, result["backend_files"])
     else:
-        error_message("GeneratorTools", result.get("message", f"{part} generation failed"))
-        files = scaffold
+        error_message(
+            "GeneratorTools",
+            result.get("message", "project generation failed"),
+        )
+        frontend_files = frontend_scaffold
+        backend_files = backend_scaffold
 
-    if part == "frontend":
-        _ensure_frontend_bootstrap(files)
-    else:
-        _ensure_backend_bootstrap(files)
-    return files
+    _ensure_frontend_bootstrap(frontend_files)
+    _ensure_backend_bootstrap(backend_files)
+    return frontend_files, backend_files
 
 
 class SupervisorTools:
@@ -534,11 +644,10 @@ class GeneratorTools:
         opl: str,
         tool_context: ToolContext,
     ) -> dict[str, Any]:
-        """Build frontend/ (React+Vite) and backend/ (Flask) folders from OPL, zip them."""
+        """Build fullstack frontend/ (React+Vite+service.js) and backend/ (Flask+CORS) from OPL, zip them."""
         start_message("GeneratorTools", "generate_code")
 
-        frontend_files = _build_project_files("frontend", opl_logic_map, opl)
-        backend_files = _build_project_files("backend", opl_logic_map, opl)
+        frontend_files, backend_files = _build_project_folders(opl_logic_map, opl)
         if not frontend_files or not backend_files:
             error_message("GeneratorTools", "generate_code")
             return {"status": "error", "message": "Failed to build project folders"}
@@ -684,32 +793,19 @@ class AgentTools:
         return [self.set_current_role, *by_name.values()]
 
 
-def ensure_project_zip_in_state(state: dict[str, Any], opl: str) -> str | None:
+def get_project_zip_from_state(state: dict[str, Any]) -> str | None:
     """
-    Return a base64 project zip in ``state``, building it with generate_code if needed.
+    Return a base64 project zip from session state if present and valid.
 
-    Used after an agent run when the session zip is missing or has legacy flat entries.
+    Does not re-run code generation; the agent must have produced the zip via
+    ``generate_code`` (or ``finish_code_zip_base64`` from ``generate_problem``).
     """
-    from types import SimpleNamespace
-
     zip_b64 = state.get("finish_code_zip_base64") or state.get("generated_code_zip")
-    if zip_b64:
-        try:
-            if _is_valid_project_zip(base64.b64decode(zip_b64)):
-                return zip_b64
-        except Exception:
-            pass
-
-    generator = GeneratorTools(DBconnection.from_config())
-    ctx = SimpleNamespace(state=state)
-    logic_map = state.get("opl_logic_map") or generator.get_opl_logic_map(opl)
-    state["opl_logic_map"] = logic_map
-    result = generator.generate_code(logic_map, opl, ctx)
-    if result.get("status") != "success":
+    if not zip_b64:
         return None
-    zip_b64 = ctx.state.get("generated_code_zip")
-    if zip_b64 and _is_valid_project_zip(base64.b64decode(zip_b64)):
-        state["generated_code_zip"] = zip_b64
-        state["finish_code_zip_base64"] = zip_b64
-        return zip_b64
+    try:
+        if _is_valid_project_zip(base64.b64decode(zip_b64)):
+            return zip_b64
+    except Exception:
+        pass
     return None

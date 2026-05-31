@@ -105,8 +105,8 @@ def generator_role() -> str:
     1. **Get OPL file** — call `get_opl_file` (or use `session.state["opl"]`).
     2. **Get OPL Logic Map** — call `get_opl_logic_map` with the OPL; store result in `opl_logic_map`.
     3. **Generate Code** — call `generate_code` with the logic map and OPL. This builds
-       `frontend/` (React + Vite, `npm run dev`) and `backend/` (Flask, `python app.py`) project
-       folders with README files, zips them, and stores the zip in session state.
+       a fullstack `frontend/` (React + Vite + axios `service.js`) and `backend/` (Flask + CORS)
+       project folders with README files, zips them, and stores the zip in session state.
     4. **Save to Database** — call `save_generated_code` (reads the zip from session; do not pass zip data yourself).
     5. **Handoff to Supervisor** — set `last_completed_role` to `generator`, call `set_current_role` with `supervisor`, then stop.
 
@@ -114,7 +114,8 @@ def generator_role() -> str:
 
     - `get_opl_file`: Resolve OPL file content.
     - `get_opl_logic_map`: Load or build the logic map from OPL.
-    - `generate_code`: Produce React frontend and Flask backend folders and zip them.
+    - `generate_code`: Produce a fullstack React + Flask zip (`frontend/` with `src/service.js`
+      and axios; `backend/` with CORS-enabled API routes matching the service layer).
     - `save_generated_code`: Persist the code zip already in session.
 
     ## Constraints

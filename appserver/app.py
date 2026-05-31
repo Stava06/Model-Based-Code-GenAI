@@ -4,7 +4,7 @@ from api.agent_api import agentAPI
 from api.users import userAPI
 from config import Config
 from extensions import init_mongo
-from messages import start_message, success_message
+from messages import start_message, success_message, error_message
 
 """
     App server for the application
@@ -56,14 +56,23 @@ if __name__ == "__main__":
     # Initialize the MongoDB extension
     init_mongo(app)
 
+    # Get the port
     port = int(CONFIG["server"]["port"])
-    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as probe:
-        if probe.connect_ex(("127.0.0.1", port)) == 0:
-            print(
-                f"WARNING: port {port} is already in use. "
-                "Stop other python app.py processes or downloads may hit stale code."
-            )
+    is_port_available = False
+    while not is_port_available or port > 65535:
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as probe:
+            if probe.connect_ex(("127.0.0.1", port)) == 0:
+                print(f'Port {port} is already in use. Changing to port {port + 1}')
+                port += 1
+            else:
+                is_port_available = True
 
+    if port > 65535:
+        error_message('server', 'No port available')
+        exit(1)
+    else:
+        success_message('server', f'Running on port {port}')
+    
     # Run the app
     app.run(
         host="0.0.0.0",
