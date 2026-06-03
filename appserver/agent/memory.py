@@ -6,6 +6,7 @@ from __future__ import annotations
 
 from typing import Any
 
+from bson import ObjectId
 from pymongo import MongoClient
 from pymongo.database import Database
 
@@ -19,18 +20,18 @@ class DBconnection:
     def __init__(self, db: Database | None = None):
         self._db = db
 
-    def _code_collection(self):
+    def _opl_collection(self):
         """
-            Get the code collection
+            Get the OPL collection
         """
-        conn = current_app.extensions.get("code_collection")
-
-        # Check if the database is configured
-        if conn is None:
-            error_message('code', "Database not configured")
+        if self._db is None:
             return None
 
-        return conn
+        coll_name = CONFIG["database"]["opl_collection"]
+        if not coll_name:
+            return None
+
+        return self._db.get_collection(coll_name)
 
     @classmethod
     def from_config(cls) -> "DBconnection":
@@ -44,17 +45,49 @@ class DBconnection:
     def _not_ready(self) -> dict[str, Any]:
         return {"status": "error", "message": "MongoDB is not configured"}
 
-    def get_training_opl(self) -> dict[str, Any]:
-        """Load training OPL from MongoDB."""
-        if self._db is None:
-            return self._not_ready()
-        return {"status": "not_implemented"}
+    def get_opl(self, opl_id: str) -> str:
+        """
+        Get an OPL from MongoDB
 
-    def get_user_opl(self) -> dict[str, Any]:
-        """Load user-provided OPL from MongoDB."""
-        if self._db is None:
-            return self._not_ready()
-        return {"status": "not_implemented"}
+        Parameters:
+            - opl_id: The ID of the OPL
+
+        Returns:
+            - str : The OPL
+        """
+
+        opl_col = self._opl_collection()
+        if opl_col is None:
+            return {"status": "error", "message": "OPL collection not configured"}
+
+        row = opl_col.find_one({"_id": ObjectId(opl_id)})
+        if not row:
+            return {"status": "error", "message": f"OPL not found: {opl_id}"}
+
+        opl = row.get("opl_data")
+        if not opl:
+            return {"status": "error", "message": f"OPL document has no opl_data: {opl_id}"}
+
+        return {"status": "success", "data": opl}
+
+    def get_user_opl_array(self, user_id: str) -> list[str]:
+        """
+        Get all user OPLs from MongoDB
+
+        Parameters:
+            - user_id: The ID of the user
+
+        Returns:
+            - list[str] : User-provided OPL
+        """
+        
+        opl_col = self._opl_collection()
+        if opl_col is None:
+            return {"status": "error", "message": "OPL collection not configured"}
+
+        opl_arr = opl_col.find({"user_id": user_id})
+
+        return {"status": "success", "data": opl_arr}
 
     def save_problem(self, problem: str | None = None) -> dict[str, Any]:
         """Persist a generated problem to MongoDB."""

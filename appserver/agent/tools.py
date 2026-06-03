@@ -10,9 +10,8 @@ import zipfile
 from collections.abc import Callable
 from typing import Any
 from google.adk.tools import ToolContext
-from config import CONFIG
 from .memory import DBconnection
-from .opl_examples import demo1, demo2
+from .opl_examples import demo1
 from agent.examples.logic_map_example import logic_map_example
 from agent.examples.eval_metrics_example import metrics_example
 from agent.examples.eval_example import evaluation_example
@@ -23,16 +22,6 @@ def _strip_code_fences(text: str) -> str:
     text = text.strip()
     match = re.match(r"^```(?:\w+)?\s*\n?(.*?)\n?```\s*$", text, re.DOTALL)
     return match.group(1).strip() if match else text
-
-
-def _gemini_api_keys() -> list[str]:
-    gemini = CONFIG["gemini"]
-    keys = list(gemini.get("api_keys") or [])
-    primary = gemini.get("api_key")
-    if primary and primary not in keys:
-        keys.insert(0, primary)
-    return keys
-
 
 def _sanitize_project_slug(name: str) -> str:
     slug = re.sub(r"[^a-z0-9-]+", "-", name.lower().strip())
@@ -773,53 +762,50 @@ def _build_project_folders(opl_logic_map: dict[str, Any],opl: str,project_name: 
     _ensure_backend_bootstrap(backend_files, project_name, project_slug, opl)
     return frontend_files, backend_files
 
+##############################################################################################################################################################
+##############################################################################################################################################################
+##############################################################################################################################################################
 
 class SupervisorTools:
-    """Supervisor — training intake, OPL intake, iteration routing, and finish."""
+    """
+        Supervisor Tools
+
+        Includes:
+            - get_opl : Resolve user-provided OPL (operational mode, initial start).
+            - generate_problem : Record a workflow problem in session state (call before finish when something failed).
+            - finish_and_return_user : Stage final delivery (code zip), persist the problem, and return the user message.
+            - save_problem : Persist the problem to the database.
+    """
 
     def __init__(self, db: DBconnection):
         self._db = db
 
-    def get_training_files(self) -> list[str]:
-        """Load training OPL files (training mode, initial start)."""
-        start_message("SupervisorTools")
+    def get_opl(self, opl_id: str) -> str:
+        """
+            Resolve OPL
 
-        # TODO: Get training files from MongoDB / local storage
-        training_files = [demo1, demo2]
-        success_message("SupervisorTools", {"training_files": training_files})
-        return training_files
+            Parameters:
+                - opl_id : The ID of the OPL
 
-    def generate_opl_logic_map(self, opl_files: list[str]) -> dict[str, Any]:
-        """Build an OPL logic map from training files (training mode)."""
-        start_message("SupervisorTools", {"opl length": len(opl_files)})
+            Returns:
+                - str : OPL
+        """
+        start_message("SupervisorTools", f"Get OPL by id {opl_id}")
 
-        # TODO: Generate OPL logic map from training files
+        if opl_id:
+            response = self._db.get_opl(opl_id)
 
-        opl_logic_map = logic_map_example
+            if response.get("status") == "success":
+                opl_retrieved = response.get("data")
+                success_message("SupervisorTools", {"opl length": len(opl_retrieved) if opl_retrieved else 0})
 
-        success_message("SupervisorTools", {"opl_logic_map length": len(opl_logic_map)})
-        return {"status": "success", "opl_logic_map": opl_logic_map}
-
-    def save_opl_logic_map(self, opl_logic_map: dict[str, Any]) -> dict[str, Any]:
-        """Persist the OPL logic map to the database (training mode)."""
-        start_message("SupervisorTools", {"opl_logic_map length": len(opl_logic_map)})
-
-        # TODO: Save OPL logic map to MongoDB
-
-        success_message("SupervisorTools", "Saved OPL logic map to database")
-        return {"status": "success", "message": "OPL logic map saved"}
-
-    def get_opl_from_user(self, tool_context: ToolContext) -> str:
-        """Resolve user-provided OPL (operational mode, initial start)."""
-        start_message("SupervisorTools")
-
-        opl = tool_context.state.get("opl") or demo2
-
-
-        # TODO: Get user OPL from MongoDB / local storage
-
-        success_message("SupervisorTools", {"opl length": len(opl)})
-        return opl
+                return opl_retrieved
+            else:
+                error_message("SupervisorTools", response.get("message"))
+                return None
+        else:
+            #TODO: Get opl from Local Storage
+            return demo1
         
     def generate_problem(
         self, message: str, tool_context: ToolContext
@@ -896,10 +882,7 @@ class SupervisorTools:
 
     def adk_tools(self) -> list[Callable[..., Any]]:
         return [
-            self.get_training_files,
-            self.generate_opl_logic_map,
-            self.save_opl_logic_map,
-            self.get_opl_from_user,
+            self.get_opl,
             self.generate_problem,
             self.finish_and_return_user,
             self.save_problem,
@@ -924,7 +907,7 @@ class GeneratorTools:
         # TODO: Get OPL from local storage / MongoDB
 
         success_message("GeneratorTools", "get_opl_file")
-        return demo2
+        return demo1
 
     def get_opl_logic_map(self) -> dict[str, Any]:
         """Load or build the OPL logic map for code generation."""

@@ -112,7 +112,7 @@ def _critic_role() -> str:
     - If there is a problem with evaluation, set current_role to `supervisor` and report problem.
     """
 
-def supervisor_role(max_itr: int = 10, training_mode: bool = False) -> str:
+def supervisor_role(max_itr: int = 10, opl_id: str = None) -> str:
     """
     ADK instruction text for the Supervisor role.
 
@@ -120,7 +120,7 @@ def supervisor_role(max_itr: int = 10, training_mode: bool = False) -> str:
     """
 
     return f"""
-    You are the Supervisor Agent. You orchestrate OPL intake, training, iteration,
+    You are the Supervisor Agent. You orchestrate OPL intake, iteration,
     role handoffs, and final problem delivery.
 
     ## Session state
@@ -128,8 +128,8 @@ def supervisor_role(max_itr: int = 10, training_mode: bool = False) -> str:
     Use these keys in session.state (do not invent values):
 
     - `initial_start` (bool): True on the first supervisor step of a new run.
-    - `training_mode` (bool): True for training path, False for operational path (set to {training_mode}).
     - `opl` (str): Active OPL for this run.
+    - `opl_id` (str): OPL ID for this run (set to "{opl_id}").
     - `cnt_itr` (int): Iteration counter (set to 0 on operational initial start).
     - `max_itr` (int): Maximum iterations before forced finish (set to {max_itr}).
     - `last_completed_role` (str): Last specialist that finished (`generator` or `critic`).
@@ -153,19 +153,11 @@ def supervisor_role(max_itr: int = 10, training_mode: bool = False) -> str:
 
     ### A. Initial start (`initial_start` is True)
 
-    1. **Training mode?** (`training_mode` is True)
-       - If **yes** (training path):
-
-         # TODO: Implement training path
-
-         4. **Reply to User and Finish** — send error message and stop.
-
-       - If **no** (operational path):
-         1. **Get OPL from User** — call `get_opl_from_user`.
-         2. Store OPL in `session.state["opl"]`.
-         3. Set `cnt_itr` to 0.
-         4. Set `initial_start` to False.
-         5. **Handoff to Generator** — call `set_current_role` with `generator`. Do not increment `cnt_itr` on this path.
+   1. **Get OPL by id** — call `get_opl` with the `opl_id` from the session.state.
+   2. Store OPL in `session.state["opl"]`.
+   3. Set `cnt_itr` to 0.
+   4. Set `initial_start` to False.
+   5. **Handoff to Generator** — call `set_current_role` with `generator`. Do not increment `cnt_itr` on this path.
 
     ### B. Not initial start (`initial_start` is False)
 
@@ -186,10 +178,7 @@ def supervisor_role(max_itr: int = 10, training_mode: bool = False) -> str:
 
     ## Tools
 
-    - `get_training_files`: Training mode — load training OPL files.
-    - `generate_opl_logic_map`: Training mode — build logic map from training files.
-    - `save_opl_logic_map`: Training mode — persist logic map.
-    - `get_opl_from_user`: Operational mode — resolve user OPL.
+    - `get_opl`: Resolve OPL by id.
     - `generate_problem`: Record a workflow problem in session (stub — no delivery).
     - `finish_and_return_user`: Final delivery — stage code zip, save problem, return user message.
     - `save_problem`: Persist the problem (called by `finish_and_return_user`; do not call alone at finish).

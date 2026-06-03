@@ -29,7 +29,7 @@ def build_agent(
     db: DBconnection | None = None,
     *,
     max_itr: int = 10,
-    training_mode: bool = False,
+    opl_id: str = None,
 ) -> Agent:
     """
     Build the singular ADK agent with all tools and unified role instructions.
@@ -37,7 +37,7 @@ def build_agent(
     Args:
         db: MongoDB access layer; created from config if omitted.
         max_itr: Supervisor iteration cap.
-        training_mode: Default training_mode in instructions.
+        opl_id: OPL ID for this run.
     """
     db = db or DBconnection.from_config()
     tools = AgentTools(db)
@@ -47,7 +47,7 @@ def build_agent(
         model=DEFAULT_MODEL,
         instruction=supervisor_role(
             max_itr=max_itr,
-            training_mode=training_mode,
+            opl_id=opl_id,
         ),
         tools=tools.adk_tools(),
     )
@@ -57,13 +57,13 @@ def create_runner(
     db: DBconnection | None = None,
     *,
     max_itr: int = 10,
-    training_mode: bool = False,
+    opl_id: str = None,
 ) -> Runner:
     """Create an ADK Runner with in-memory sessions (swap for Mongo SessionService later)."""
     agent = build_agent(
         db=db,
         max_itr=max_itr,
-        training_mode=training_mode,
+        opl_id=opl_id,
     )
     session_service = InMemorySessionService()
     return Runner(

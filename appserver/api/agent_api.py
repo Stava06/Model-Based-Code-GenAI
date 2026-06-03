@@ -68,12 +68,12 @@ def generate():
     start_message("agent", "Generate code zip")
 
     # Get the OPL and filename from the request
-    opl = request.args.get("opl") or demo2
     filename = request.args.get("filename") or 'generated_project.zip'
     user_id = request.args.get("user_id") or "generate-api"
+    opl_id = request.args.get("opl_id") or "6a2043546b3d44d88ccc7602"
 
     try:
-        runner = create_runner(max_itr=MAX_AGENT_ITERATIONS)
+        runner = create_runner(max_itr=MAX_AGENT_ITERATIONS, opl_id=opl_id)
         session_id = str(uuid.uuid4())
 
         # Create a new session
@@ -84,8 +84,7 @@ def generate():
             state={
                 "current_role": "supervisor",
                 "initial_start": True,
-                "training_mode": False,
-                "opl": opl,
+                "opl_id": opl_id,
             },
         )
 
@@ -155,3 +154,18 @@ def generate():
             "success": False,
             "message": f"Agent creation failed: {exc}",
         }), 500
+
+@agentAPI.get("/train")
+def train():
+    """
+        Train the agent to generate a Logic Map
+    """
+
+    start_message("agent", "Train agent")
+
+    # TODO: Train the agent to generate a Logic Map
+
+    return jsonify({
+        "success": True,
+        "message": "Agent trained successfully",
+    }), 200
