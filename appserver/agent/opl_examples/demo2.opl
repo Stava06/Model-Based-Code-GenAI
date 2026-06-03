@@ -1,10 +1,113 @@
-1. Coffee Machine consists of Water Tank, Coffee Beans, Cup, and Heater.
-2. Water Tank can be empty or full.
-3. Cup can be empty or filled.
-4. Coffee Making is a process.
+1. Coffee Machine consists of Water Tank, Coffee Bean Container, Milk Tank, Cup, Grinder, Heater, Brewing Unit, and Control Panel.
 
-5. User is the agent of Coffee Making.
-6. Water Tank and Coffee Beans are instruments of Coffee Making.
-7. Coffee Making changes Cup from empty to filled.
-8. Coffee Making consumes Coffee Beans.
-9. Coffee Making requires Water Tank to be full.
+2. Water Tank can be empty or full.
+3. Coffee Bean Container can be empty or full.
+4. Milk Tank can be empty or full.
+5. Cup can be empty or filled.
+
+6. Coffee Type can be Espresso, Americano, Cappuccino, Latte, or Black Coffee.
+
+7. Brewing Unit can be idle or brewing.
+8. Grinder can be idle or grinding.
+9. Heater can be off or heating.
+
+10. User is the agent of Coffee Preparation.
+11. User is the agent of Water Refill.
+12. User is the agent of Bean Refill.
+13. User is the agent of Milk Refill.
+14. User is the agent of Coffee Selection.
+
+15. Water Tank is an instrument of Coffee Preparation.
+16. Coffee Bean Container is an instrument of Coffee Preparation.
+17. Grinder is an instrument of Coffee Preparation.
+18. Heater is an instrument of Coffee Preparation.
+19. Brewing Unit is an instrument of Coffee Preparation.
+20. Milk Tank is an instrument of Milk Frothing.
+
+21. Coffee Selection requires User.
+22. Coffee Selection yields Coffee Type.
+
+23. Water Refill changes Water Tank from empty to full.
+24. Water Refill requires Water Tank to be empty.
+
+25. Bean Refill changes Coffee Bean Container from empty to full.
+26. Bean Refill requires Coffee Bean Container to be empty.
+
+27. Milk Refill changes Milk Tank from empty to full.
+28. Milk Refill requires Milk Tank to be empty.
+
+29. Grinding Coffee is a process.
+30. User is the agent of Grinding Coffee.
+31. Grinder is an instrument of Grinding Coffee.
+32. Grinding Coffee consumes Coffee Beans.
+33. Grinding Coffee yields Ground Coffee.
+
+34. Heating Water is a process.
+35. Heater is an instrument of Heating Water.
+36. Heating Water requires Water Tank to be full.
+37. Heating Water yields Hot Water.
+
+38. Brewing Espresso is a process.
+39. Brewing Unit is an instrument of Brewing Espresso.
+40. Brewing Espresso requires Ground Coffee.
+41. Brewing Espresso requires Hot Water.
+42. Brewing Espresso changes Cup from empty to filled.
+43. Brewing Espresso consumes Ground Coffee.
+44. Brewing Espresso consumes Hot Water.
+
+45. Brewing Americano is a process.
+46. Brewing Americano requires Brewing Espresso.
+47. Brewing Americano requires additional Hot Water.
+48. Brewing Americano changes Cup from empty to filled.
+
+49. Milk Frothing is a process.
+50. Milk Tank is an instrument of Milk Frothing.
+51. Milk Frothing consumes Milk.
+52. Milk Frothing yields Frothed Milk.
+
+53. Brewing Cappuccino is a process.
+54. Brewing Cappuccino requires Brewing Espresso.
+55. Brewing Cappuccino requires Milk Frothing.
+56. Brewing Cappuccino changes Cup from empty to filled.
+57. Brewing Cappuccino consumes Frothed Milk.
+
+58. Brewing Latte is a process.
+59. Brewing Latte requires Brewing Espresso.
+60. Brewing Latte requires Milk Frothing.
+61. Brewing Latte changes Cup from empty to filled.
+62. Brewing Latte consumes Frothed Milk.
+
+63. Brewing Black Coffee is a process.
+64. Brewing Black Coffee requires Ground Coffee.
+65. Brewing Black Coffee requires Hot Water.
+66. Brewing Black Coffee changes Cup from empty to filled.
+
+67. Coffee Preparation is a process.
+68. User is the agent of Coffee Preparation.
+69. Coffee Preparation requires Coffee Selection.
+70. Coffee Preparation requires Water Tank to be full.
+71. Coffee Preparation requires Coffee Bean Container to be full.
+
+72. Coffee Preparation consumes Water.
+73. Coffee Preparation consumes Coffee Beans.
+
+74. Coffee Preparation invokes Grinding Coffee.
+75. Coffee Preparation invokes Heating Water.
+
+76. Coffee Preparation invokes Brewing Espresso if Coffee Type is Espresso.
+77. Coffee Preparation invokes Brewing Americano if Coffee Type is Americano.
+78. Coffee Preparation invokes Brewing Cappuccino if Coffee Type is Cappuccino.
+79. Coffee Preparation invokes Brewing Latte if Coffee Type is Latte.
+80. Coffee Preparation invokes Brewing Black Coffee if Coffee Type is Black Coffee.
+
+81. Coffee Preparation yields Filled Cup.
+
+82. Cleaning Machine is a process.
+83. User is the agent of Cleaning Machine.
+84. Cleaning Machine requires Coffee Machine.
+85. Cleaning Machine changes Coffee Machine from dirty to clean.
+
+86. Coffee Machine can be ready, preparing, or maintenance.
+87. Coffee Preparation changes Coffee Machine from ready to preparing.
+88. Coffee Preparation changes Coffee Machine from preparing to ready.
+89. Cleaning Machine changes Coffee Machine from maintenance to ready.

@@ -6,9 +6,6 @@ from dotenv import load_dotenv
 class Config:
     """
     Config loader for the app server (singleton).
-
-    Config() always returns the same configuration dict.
-    Prefer importing CONFIG from this module.
     """
     _config = None
 

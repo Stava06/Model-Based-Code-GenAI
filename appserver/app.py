@@ -5,6 +5,8 @@ from api.users import userAPI
 from config import Config
 from extensions import init_mongo
 from messages import start_message, success_message, error_message
+import socket
+
 
 """
     App server for the application
@@ -13,10 +15,6 @@ from messages import start_message, success_message, error_message
 # Initialize the Flask app
 app = Flask(__name__)
 CORS(app)
-
-# Configure the app
-CONFIG = Config()
-app.config["MONGODB_URI"] = CONFIG["database"]["uri"]
 
 @app.route("/")
 def index():
@@ -41,20 +39,14 @@ def index():
     success_message('main', "Index page loaded successfully")
     return jsonify(answer), 200
 
-
-# Register the blueprints
-app.register_blueprint(userAPI)
-app.register_blueprint(agentAPI)
-
-# MongoDB (used by agent memory tools)
-init_mongo(app)
-
-
 if __name__ == "__main__":
-    import socket
+    # Configure the app
+    CONFIG = Config()
+    app.config["MONGODB_URI"] = CONFIG["database"]["uri"]
 
-    # Initialize the MongoDB extension
-    init_mongo(app)
+    # Register the blueprints
+    app.register_blueprint(userAPI)
+    app.register_blueprint(agentAPI)
 
     # Get the port
     port = int(CONFIG["server"]["port"])

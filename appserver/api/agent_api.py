@@ -3,26 +3,23 @@
 
     Includes:
         - agentAPI : Blueprint for the agent API
+        - index : Health check: ADK agent loads and Gemini API is reachable.
+        - generate : Generate frontend/backend from OPL and download as a zip.
 """
 
-import base64
 import uuid
 from io import BytesIO
-
+import base64
 from flask import Blueprint, jsonify, request, send_file
 from google.genai import types
 from messages import error_message, start_message, success_message
-from agent.agent import APP_NAME, create_runner
-from agent.opl_examples import demo1
-from agent.tools import (
-    get_project_download_name,
-    get_project_zip_from_state,
-    _is_valid_project_zip,
-    zip_entry_names,
-)
+from agent.agent import create_runner
+from agent.opl_examples import demo2
+
+from agent.health import check_agent_health
 
 agentAPI = Blueprint("agentAPI", __name__, url_prefix="/agent")
-
+MAX_AGENT_ITERATIONS = 2
 
 @agentAPI.get("/")
 def index():
@@ -31,9 +28,8 @@ def index():
     """
     start_message("agent", "Health check")
 
+    # Check the agent health
     try:
-        from agent.health import check_agent_health
-
         health = check_agent_health()
     except Exception as exc:
         error_message("agent", f"Health check failed: {exc}")
@@ -66,21 +62,23 @@ def generate():
         Generate frontend/backend from OPL and download as a zip.
 
         Query params (optional):
-            opl: OPL source text (defaults to demo1)
+            opl: OPL source text (defaults to demo2)
             filename: download filename (defaults to agent-chosen project slug, or generated_code.zip)
     """
     start_message("agent", "Generate code zip")
 
-    opl = request.args.get("opl") or demo1
-    filename = request.args.get("filename")
-    default_filename = "generated_code.zip"
+    # Get the OPL and filename from the request
+    opl = request.args.get("opl") or demo2
+    filename = request.args.get("filename") or 'generated_project.zip'
+    user_id = request.args.get("user_id") or "generate-api"
 
     try:
-        runner = create_runner(max_itr=1)
-        user_id = "generate-api"
+        runner = create_runner(max_itr=MAX_AGENT_ITERATIONS)
         session_id = str(uuid.uuid4())
+
+        # Create a new session
         runner.session_service.create_session_sync(
-            app_name=APP_NAME,
+            app_name="model_based_codegen",
             user_id=user_id,
             session_id=session_id,
             state={
@@ -90,74 +88,70 @@ def generate():
                 "opl": opl,
             },
         )
+
+        # Create a new message
         message = types.Content(
             role="user",
             parts=[
                 types.Part(
                     text=(
-                        "Operational mode: get OPL, hand off to Generator, choose a project name "
-                        "from the OPL (set_project_name), run generate_code "
-                        "(fullstack: React frontend/ with src/service.js + axios, "
-                        "Flask backend/ with CORS API routes, in a zip), "
-                        "save_generated_code, then call finish_and_return_user before finishing."
-                    )
+                        "Start workflow of given current_role"                    )
                 )
             ],
         )
-        for _event in runner.run(
+
+        # Run the agent
+        run_length = 0
+        for _ in runner.run(
             user_id=user_id,
             session_id=session_id,
             new_message=message,
         ):
-            pass
+            run_length += 1
 
-        session = runner.session_service.get_session_sync(
-            app_name=APP_NAME,
-            user_id=user_id,
-            session_id=session_id,
-        )
-        if not session:
+        try:
+            session = runner.session_service.get_session_sync(
+                app_name="model_based_codegen",
+                user_id=user_id,
+                session_id=session_id,
+            )
+            if not session:
+                error_message("agentAPI", "Failed to create session")
+                return jsonify({
+                    "success": False,
+                    "message": "Failed to create session",
+                }), 500
+
+            # Generate the zip file
+            generated_code_zip = session.state.get('generated_code_zip')
+
+            if not generated_code_zip:
+                error_message("agentAPI", "No generated code zip in session")
+                return jsonify({
+                    "success": False,
+                    "message": "No generated code zip in session",
+                }), 500
+
+            zip_bytes = base64.b64decode(generated_code_zip)
+            zip_file = BytesIO(zip_bytes)
+
+            success_message("agentAPI", f"Agent created {run_length} events, for user {user_id} with project name {session.state.get('project_name')}")
+
+            return send_file(
+                zip_file,
+                mimetype="application/zip",
+                as_attachment=True,
+                download_name=filename,
+            )
+        except Exception as exc:
+            error_message("agentAPI", f"Zip file generation failed: {exc}")
             return jsonify({
                 "success": False,
-                "message": "Agent session not found",
+                "message": f"Zip file generation failed: {exc}",
             }), 500
-
-        if not filename:
-            filename = get_project_download_name(session.state, default_filename)
-        if not filename.lower().endswith(".zip"):
-            filename = f"{filename}.zip"
-
-        zip_b64 = get_project_zip_from_state(session.state)
-        if not zip_b64:
-            return jsonify({
-                "success": False,
-                "message": (
-                    "No valid project zip in session — ensure the agent completed "
-                    "generate_code and finish_and_return_user before finish"
-                ),
-            }), 500
-
-        zip_bytes = base64.b64decode(zip_b64)
-        if not _is_valid_project_zip(zip_bytes):
-            return jsonify({
-                "success": False,
-                "message": "Agent zip is missing frontend/ and backend/ folder trees",
-                "zip_entries": zip_entry_names(zip_bytes),
-            }), 500
-
-        success_message(
-            "agent",
-            f"Code zip ready ({len(zip_entry_names(zip_bytes))} entries)",
-        )
-        return send_file(
-            BytesIO(zip_bytes),
-            mimetype="application/zip",
-            as_attachment=True,
-            download_name=filename,
-        )
     except Exception as exc:
-        error_message("agent", f"Generate failed: {exc}")
+        error_message("agentAPI", f"Generate failed: {exc}")
         return jsonify({
             "success": False,
-            "message": str(exc),
+            "message": f"Agent creation failed: {exc}",
         }), 500

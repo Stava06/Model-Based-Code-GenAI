@@ -17,7 +17,7 @@ from agent.examples.logic_map_example import logic_map_example
 from agent.examples.eval_metrics_example import metrics_example
 from agent.examples.eval_example import evaluation_example
 from messages import start_message, error_message, success_message
-
+from extensions import call_gemini
 
 def _strip_code_fences(text: str) -> str:
     text = text.strip()
@@ -739,65 +739,31 @@ def _zip_project_folders(
             zf.writestr(entry_path, content)
     return buf.getvalue()
 
-
-def _call_gemini_for_project(
-    opl_logic_map: dict[str, Any],
-    opl: str,
-    project_name: str,
-) -> dict[str, Any]:
-    api_keys = _gemini_api_keys()
-    model = CONFIG["gemini"].get("model")
-
-    if not api_keys:
-        return {"status": "error", "message": "GEMINI_API_KEY is not configured"}
-
-    try:
-        from google import genai
-    except ImportError:
-        return {"status": "error", "message": "google-genai not installed"}
-
-    errors: list[str] = []
-    for api_key in api_keys:
-        try:
-            client = genai.Client(api_key=api_key)
-            response = client.models.generate_content(
-                model=model,
-                contents=_codegen_project_prompt(opl_logic_map, opl, project_name),
-                config={"temperature": 0.2, "response_mime_type": "application/json"},
-            )
-            raw = getattr(response, "text", None) or ""
-            parsed = _parse_generated_project(raw)
-            if parsed.get("status") == "success":
-                return parsed
-            errors.append(parsed.get("message", "Failed to parse project"))
-        except Exception as exc:
-            errors.append(str(exc))
-
-    return {
-        "status": "error",
-        "message": errors[-1] if errors else "Gemini failed for project",
-    }
-
-
-def _build_project_folders(
-    opl_logic_map: dict[str, Any],
-    opl: str,
-    project_name: str,
-    project_slug: str,
-) -> tuple[dict[str, str], dict[str, str]]:
+def _build_project_folders(opl_logic_map: dict[str, Any],opl: str,project_name: str,project_slug: str,) -> tuple[dict[str, str], dict[str, str]]:
     frontend_scaffold = _minimal_frontend_scaffold(project_name, project_slug)
     backend_scaffold = _minimal_backend_scaffold(project_name, project_slug)
-    result = _call_gemini_for_project(opl_logic_map, opl, project_name)
+
+    prompt = _codegen_project_prompt(opl_logic_map, opl, project_name)
+
+    result = call_gemini(prompt)
     if result.get("status") == "success":
-        frontend_files = _merge_files(
-            frontend_scaffold, result["frontend_files"]
-        )
-        backend_files = _merge_files(backend_scaffold, result["backend_files"])
+        parsed = _parse_generated_project(result["data"])
+        if parsed.get("status") == "success":
+            frontend_files = _merge_files(
+                frontend_scaffold, parsed["frontend_files"]
+            )
+            backend_files = _merge_files(
+                backend_scaffold, parsed["backend_files"]
+            )
+        else:
+            error_message(
+                "GeneratorTools",
+                parsed.get("message", "invalid Gemini project JSON"),
+            )
+            frontend_files = frontend_scaffold
+            backend_files = backend_scaffold
     else:
-        error_message(
-            "GeneratorTools",
-            result.get("message", "project generation failed"),
-        )
+        error_message("GeneratorTools", result.get("message", "project generation failed"))
         frontend_files = frontend_scaffold
         backend_files = backend_scaffold
 
@@ -825,18 +791,18 @@ class SupervisorTools:
 
     def generate_opl_logic_map(self, opl_files: list[str]) -> dict[str, Any]:
         """Build an OPL logic map from training files (training mode)."""
-        start_message("SupervisorTools", {"opl_files": opl_files})
+        start_message("SupervisorTools", {"opl length": len(opl_files)})
 
         # TODO: Generate OPL logic map from training files
 
         opl_logic_map = logic_map_example
 
-        success_message("SupervisorTools", {"opl_logic_map": opl_logic_map})
+        success_message("SupervisorTools", {"opl_logic_map length": len(opl_logic_map)})
         return {"status": "success", "opl_logic_map": opl_logic_map}
 
     def save_opl_logic_map(self, opl_logic_map: dict[str, Any]) -> dict[str, Any]:
         """Persist the OPL logic map to the database (training mode)."""
-        start_message("SupervisorTools", {"opl_logic_map": opl_logic_map})
+        start_message("SupervisorTools", {"opl_logic_map length": len(opl_logic_map)})
 
         # TODO: Save OPL logic map to MongoDB
 
@@ -845,14 +811,14 @@ class SupervisorTools:
 
     def get_opl_from_user(self, tool_context: ToolContext) -> str:
         """Resolve user-provided OPL (operational mode, initial start)."""
-        start_message("SupervisorTools", {"tool_context": tool_context})
+        start_message("SupervisorTools")
 
-        opl = tool_context.state.get("opl") or demo1
+        opl = tool_context.state.get("opl") or demo2
 
 
         # TODO: Get user OPL from MongoDB / local storage
 
-        success_message("SupervisorTools", {"opl": opl})
+        success_message("SupervisorTools", {"opl length": len(opl)})
         return opl
         
     def generate_problem(
@@ -958,9 +924,9 @@ class GeneratorTools:
         # TODO: Get OPL from local storage / MongoDB
 
         success_message("GeneratorTools", "get_opl_file")
-        return demo1
+        return demo2
 
-    def get_opl_logic_map(self, opl: str) -> dict[str, Any]:
+    def get_opl_logic_map(self) -> dict[str, Any]:
         """Load or build the OPL logic map for code generation."""
         start_message("GeneratorTools", "get_opl_logic_map")
 

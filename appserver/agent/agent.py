@@ -19,10 +19,9 @@ from google.adk.runners import Runner
 from google.adk.sessions import InMemorySessionService
 
 from .memory import DBconnection
-from .roles import agent_description, agent_instruction
+from .roles import supervisor_role
 from .tools import AgentTools
 
-APP_NAME = "model_based_codegen"
 DEFAULT_MODEL = os.getenv("GEMINI_MODEL", "gemini-2.5-flash")
 
 
@@ -46,8 +45,7 @@ def build_agent(
     return Agent(
         name="model_based_codegen_agent",
         model=DEFAULT_MODEL,
-        description=agent_description(),
-        instruction=agent_instruction(
+        instruction=supervisor_role(
             max_itr=max_itr,
             training_mode=training_mode,
         ),
@@ -69,7 +67,7 @@ def create_runner(
     )
     session_service = InMemorySessionService()
     return Runner(
-        app_name=APP_NAME,
+        app_name="model_based_codegen",
         agent=agent,
         session_service=session_service,
         auto_create_session=True,

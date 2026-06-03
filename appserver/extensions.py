@@ -3,14 +3,19 @@
     
     Includes:
         - init_mongo : Initialize the MongoDB extension
+        - call_gemini : Call the Gemini API
 """
 from pymongo import MongoClient
 from config import CONFIG
 from messages import start_message, success_message, error_message
+from google import genai
 
 def init_mongo(app) -> None:
     """
         Initialize the MongoDB extension
+
+        params:
+            - app: The Flask app instance
     """
     start_message('mongo')
 
@@ -43,3 +48,42 @@ def init_mongo(app) -> None:
         error_message('mongo', f"Error initializing MongoDB: {e}")
         app.extensions["users_collection"] = None
         app.extensions["code_collection"] = None
+
+def call_gemini(prompt: str):
+    """
+        Call the Gemini API
+
+        params:
+            - prompt: The prompt to call the Gemini API with
+    """
+    start_message('gemini', {"prompt_length": len(prompt)})
+    
+    # Get the Gemini configuration
+    gemini = CONFIG["gemini"]
+    api_key = gemini.get("api_key")
+    model = gemini.get("model")
+
+    # Check if the Gemini API key is configured
+    if not api_key:
+        error_message('gemini', "GEMINI_API_KEY is not configured")
+        return {"status": "error", "message": "GEMINI_API_KEY is not configured"}
+        
+    try:
+        # Create a new Gemini client
+        client = genai.Client(api_key=api_key)
+
+        # Call the Gemini API
+        response = client.models.generate_content(
+            model=model,
+            contents=prompt,
+            config={"temperature": 0.2, "response_mime_type": "application/json"},
+        )
+
+        # Get the response data
+        data = getattr(response, "text", None) or ""
+
+        success_message('gemini', {"response_length": len(data)})
+        return {"status": "success", "data": data}
+    except Exception as exc:
+        error_message('gemini', f"Error calling Gemini: {exc}")
+        return {"status": "error", "message": f"Error calling Gemini: {exc}"}
