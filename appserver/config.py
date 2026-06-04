@@ -35,6 +35,7 @@ class Config:
                 "name": os.getenv("MONGO_DB"),
                 "user_collection": os.getenv("MONGO_USER_COLLECTION"),
                 "opl_collection": os.getenv("MONGO_OPL_COLLECTION"),
+                "opl_logic_map_collection": os.getenv("MONGO_OPL_LOGIC_MAP_COLLECTION"),
             },
             "server": {
                 "port": os.getenv("PORT") or 5000,

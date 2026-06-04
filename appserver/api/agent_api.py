@@ -7,6 +7,7 @@
         - generate : Generate frontend/backend from OPL and download as a zip.
 """
 
+import time
 import uuid
 from io import BytesIO
 import base64
@@ -20,6 +21,7 @@ from agent.health import check_agent_health
 
 agentAPI = Blueprint("agentAPI", __name__, url_prefix="/agent")
 MAX_AGENT_ITERATIONS = 2
+RETRIES = 3
 
 @agentAPI.get("/")
 def index():
@@ -85,6 +87,7 @@ def generate():
                 "current_role": "supervisor",
                 "initial_start": True,
                 "opl_id": opl_id,
+                "cnt_itr": 0,
             },
         )
 
@@ -99,14 +102,33 @@ def generate():
             ],
         )
 
-        # Run the agent
-        run_length = 0
-        for _ in runner.run(
-            user_id=user_id,
-            session_id=session_id,
-            new_message=message,
-        ):
-            run_length += 1
+        for retry in range(RETRIES):
+            print(f"Trying to run the agent : {retry + 1}/{RETRIES}")
+
+            try:
+                # Run the agent
+                run_length = 0
+                for _ in runner.run(
+                    user_id=user_id,
+                    session_id=session_id,
+                    new_message=message,
+                ):
+                    run_length += 1
+                
+                # If the agent ran successfully, break the loop
+                if run_length > 0:
+                    break
+            except Exception as exc:
+                error_message("agentAPI", f"Failed to run the agent on retry {retry + 1}: {exc}")
+                time.sleep(3)
+                
+                # If this is the last retry, return an error
+                if retry == RETRIES - 1:
+                    error_message("agentAPI", "Failed to run the agent after all retries")
+                    return jsonify({
+                            "success": False,
+                            "message": "Failed to run the agent after all retries",
+                        }), 500
 
         try:
             session = runner.session_service.get_session_sync(
