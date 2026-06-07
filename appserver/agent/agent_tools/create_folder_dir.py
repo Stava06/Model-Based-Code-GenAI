@@ -81,6 +81,48 @@ def backend_skeleton(project_name: str, project_slug: str) -> dict[str, str]:
         "requirements.txt": "flask\nflask-cors\n"
     }
 
+def coverage_graph_schema() -> str:
+    """
+    Generate the graph to JSON prompt
+
+    Parameters:
+        - None
+
+    Returns:
+        - str : The graph to JSON prompt
+    """
+    return (
+            "{\n"
+            '  "nodes": [\n'
+            "    {\n"
+            '      "name": "<ObjectOrProcessName>",\n'
+            '      "type": "object" | "process",\n'
+            '      "states": ["<state1>", "<state2>"],\n'
+            '      "relations": [\n'
+            "        {\n"
+            '          "from": "<source node name>",\n'
+            '          "to": "<target node name>",\n'
+            '          "type": "<relation_type>",\n'
+            '          "from_state": "<optional state on from>",\n'
+            '          "to_state": "<optional state on to>"\n'
+            "        }\n"
+            "      ]\n"
+            "    }\n"
+            "  ]\n"
+            "}\n\n"
+            "Rules:\n"
+            "- One node per OPL object or process ONLY — never per state.\n"
+            "- Put all states in the node's states[] array (e.g. WaterTank.states: "
+            "[\"empty\", \"full\"]; CoffeeType.states: [\"espresso\", \"latte\"]).\n"
+            "- type must be exactly \"object\" or \"process\".\n"
+            "- Relation types use snake_case: agent_link, instrument_link, consumption_link, "
+            "result_link, effect_link, procedural_link, aggregation_participation, "
+            "exhibition_characterization.\n"
+            "- Put each relation only on the from node's relations array (never on the to node).\n"
+            "- from and to must match top-level node name values exactly.\n"
+            "- Return only valid JSON.\n"
+        )
+
 def generate_project_prompt(opl_logic_map: dict[str, Any], opl: str, project_name: str, slug: str) -> str:
   """
   Generate the project prompt
@@ -96,6 +138,9 @@ def generate_project_prompt(opl_logic_map: dict[str, Any], opl: str, project_nam
 Prioritize working React UI and Flask API over documentation. The app must reflect OPL objects
 and processes — not a generic template. Starter scaffolding may exist; **replace** placeholder
 UI/API with domain-specific implementations — do not return them unchanged.
+While implementing code, record every OPL object/process you implement in the top-level
+`code_coverage_graph` field (see Graph Section). **Do not** add a graph file inside
+`frontend/` or `backend/` — the graph is metadata for evaluation only, not part of the zip.
 
 The React frontend and Flask backend must be wired together: UI actions call the backend over HTTP.
 
@@ -157,6 +202,15 @@ The React frontend and Flask backend must be wired together: UI actions call the
   immediately after app creation, define JSON API routes matching `service.js`, and call
   `_install_dependencies()` before `app.run(host="0.0.0.0", port=5000, debug=True)` in `__main__`.
 
+## Graph Section (`code_coverage_graph`)
+For each OPL object or process you implement in frontend/backend code, add a node to
+`code_coverage_graph` with its states in `states[]` (not as separate nodes). For each
+relation between implemented entities, add an entry on the source node's `relations` array.
+Example: WaterTank has states [\"empty\", \"full\"] and a relation
+{{\"from\": \"WaterTank\", \"to\": \"WaterTank\", \"to_state\": \"full\", \"type\": \"exhibition_characterization\"}}.
+Use this structure and rules:
+{coverage_graph_schema()}
+
 ## README (short)
 - Each `README.md`: how to run, prerequisites, and one short paragraph mapping OPL objects/processes
   to UI/API. Do not spend most of the output on documentation.
@@ -178,9 +232,24 @@ Return **only** JSON (no markdown):
       "relative/path": "file contents",
       "README.md": "..."
     }}
+  }},
+  "code_coverage_graph": {{
+    "nodes": [
+      {{
+        "name": "<implemented entity>",
+        "type": "object",
+        "states": ["<state1>", "<state2>"],
+        "relations": [
+          {{
+            "from": "<source>",
+            "to": "<target>",
+            "type": "<relation_type>",
+            "from_state": "<optional>",
+            "to_state": "<optional>"
+          }}
+        ]
+      }}
+    ]
   }}
 }}
-
-Paths in each `files` map are relative to that folder (do not prefix keys with `frontend/` or `backend/`).
-Include every file needed to run the fullstack app (both projects connected via axios + CORS).
 """

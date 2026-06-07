@@ -5,10 +5,15 @@
         - init_mongo : Initialize the MongoDB extension
         - call_gemini : Call the Gemini API
 """
+import time
+
 from pymongo import MongoClient
 from config import CONFIG
 from messages import start_message, success_message, error_message
 from google import genai
+
+GEMINI_RETRIES = 3
+GEMINI_RETRY_DELAY_SEC = 3
 
 def init_mongo(app) -> None:
     """
@@ -72,22 +77,31 @@ def call_gemini(prompt: str):
         error_message('gemini', "GEMINI_API_KEY is not configured")
         return {"status": "error", "message": "GEMINI_API_KEY is not configured"}
         
-    try:
-        # Create a new Gemini client
-        client = genai.Client(api_key=api_key)
+    client = genai.Client(api_key=api_key)
+    last_error = "Error calling Gemini"
 
-        # Call the Gemini API
-        response = client.models.generate_content(
-            model=model,
-            contents=prompt,
-            config={"temperature": 0.2, "response_mime_type": "application/json"},
-        )
+    for attempt in range(GEMINI_RETRIES):
+        try:
+            response = client.models.generate_content(
+                model=model,
+                contents=prompt,
+                config={"temperature": 0.2, "response_mime_type": "application/json"},
+            )
+            data = getattr(response, "text", None) or ""
+            success_message("gemini", {"response_length": len(data), "attempt": attempt + 1})
+            return {"status": "success", "data": data}
+        except Exception as exc:
+            last_error = f"Error calling Gemini: {exc}"
+            retryable = any(
+                marker in str(exc).upper()
+                for marker in ("503", "500", "429", "UNAVAILABLE", "RESOURCE_EXHAUSTED", "INTERNAL")
+            )
+            error_message(
+                "gemini",
+                f"{last_error} (attempt {attempt + 1}/{GEMINI_RETRIES})",
+            )
+            if not retryable or attempt == GEMINI_RETRIES - 1:
+                return {"status": "error", "message": last_error}
+            time.sleep(GEMINI_RETRY_DELAY_SEC)
 
-        # Get the response data
-        data = getattr(response, "text", None) or ""
-
-        success_message('gemini', {"response_length": len(data)})
-        return {"status": "success", "data": data}
-    except Exception as exc:
-        error_message('gemini', f"Error calling Gemini: {exc}")
-        return {"status": "error", "message": f"Error calling Gemini: {exc}"}
+    return {"status": "error", "message": last_error}

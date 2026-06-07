@@ -33,6 +33,8 @@ def _generator_role() -> str:
     - `opl_logic_map` (dict): Objects/processes/relations — from `get_opl_logic_map` return value.
     - `project_name` (str): Set by `set_project_name` (also in session after that call).
     - `generated_code_zip` (str): **Written only by `generate_code`** — base64 zip with `frontend/` and `backend/`.
+    - `code_coverage_graph` (dict): **Written only by `generate_code`** — OPL coverage graph of implemented
+      statements; stored in session for the Critic, not included in the zip.
 
     ## Mandatory tool sequence (same run, no gaps)
 
@@ -94,6 +96,8 @@ def _critic_role() -> str:
 
     - `opl_logic_map` (dict): OPL logic map under review.
     - `generated_code` (str): Code to evaluate (from Generator).
+    - `code_coverage_graph` (dict): Coverage graph from `generate_code` — used for graph coverage scoring.
+    - `opl_reference_graph` (dict): Cached OPL reference graph for consistent evaluation.
     - `code_evaluation` (dict): Results from `generate_code_evaluation`.
     - `evaluation_metrics` (list): Evaluation metrics (from `get_evaluation_metrics`).
 
@@ -103,7 +107,8 @@ def _critic_role() -> str:
 
     1. **Get OPL Logic Map from Database** — call `get_opl_logic_map` and store in `opl_logic_map`.
     2. **Get Evaluation Metrics** — call `get_evaluation_metrics` and store in `evaluation_metrics`.
-    3. **Generate Code Evaluation** — call `generate_code_evaluation` with `generated_code` and `evaluation_metrics`.
+    3. **Generate Code Evaluation** — call `generate_code_evaluation` with `generated_code` and
+       `evaluation_metrics` (reads `code_coverage_graph` from session for graph coverage scoring).
     4. **Handoff to Supervisor** — set `last_completed_role` to `critic`, call `set_current_role` with `supervisor`, then stop.
 
     ## Tools

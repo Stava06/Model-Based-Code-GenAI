@@ -152,3 +152,36 @@ class DBconnection:
 
         opl_col.update_one({"_id": ObjectId(opl_id)}, {"$set": {"generated_code": code_zip}})
         return {"status": "success", "message": "Zip saved to database"}
+
+    def save_opl_evaluation_scores(self, opl_id: str, eval: dict[str, Any]) -> dict[str, Any]:
+        """
+            Save the evaluation scores to the database
+
+            Parameters:
+                - opl_id : The OPL ID
+                - eval : The evaluation scores
+
+            Returns:
+                - dict[str, Any] : The result
+        """
+
+        opl_col = self._opl_collection()
+        if opl_col is None:
+            return {"status": "error", "message": "OPL collection not configured"}
+
+        graph_coverage_score = eval["graph_coverage"]["score"]
+        syntax_score = eval["syntax_and_executable"]["breakdown"]["syntax_score"]
+        executable_score = eval["syntax_and_executable"]["breakdown"]["executable_score"]
+        overall_score = eval["overall_score"]
+
+        opl_col.update_one({
+            "_id": ObjectId(opl_id)}, 
+            {"$set": {
+                "graph_coverage_score": graph_coverage_score, 
+                "syntax_score": syntax_score, 
+                "exec_score": executable_score, 
+                "overall_score": overall_score
+            }
+        })
+        
+        return {"status": "success", "message": "Graph coverage score saved to database"}

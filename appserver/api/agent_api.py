@@ -18,6 +18,7 @@ from agent.agent import create_runner
 from agent.opl_examples import demo2
 
 from agent.health import check_agent_health
+from agent.tools import is_valid_project_zip
 
 agentAPI = Blueprint("agentAPI", __name__, url_prefix="/agent")
 MAX_AGENT_ITERATIONS = 2
@@ -76,37 +77,36 @@ def generate():
 
     try:
         runner = create_runner(max_itr=MAX_AGENT_ITERATIONS, opl_id=opl_id)
-        session_id = str(uuid.uuid4())
 
-        # Create a new session
-        runner.session_service.create_session_sync(
-            app_name="model_based_codegen",
-            user_id=user_id,
-            session_id=session_id,
-            state={
-                "current_role": "supervisor",
-                "initial_start": True,
-                "opl_id": opl_id,
-                "cnt_itr": 0,
-            },
-        )
-
-        # Create a new message
         message = types.Content(
             role="user",
             parts=[
                 types.Part(
-                    text=(
-                        "Start workflow of given current_role"                    )
+                    text="Start workflow of given current_role"
                 )
             ],
         )
 
+        last_failure = "Failed to run the agent"
+        run_length = 0
+
         for retry in range(RETRIES):
             print(f"Trying to run the agent : {retry + 1}/{RETRIES}")
+            session_id = str(uuid.uuid4())
+
+            runner.session_service.create_session_sync(
+                app_name="model_based_codegen",
+                user_id=user_id,
+                session_id=session_id,
+                state={
+                    "current_role": "supervisor",
+                    "initial_start": True,
+                    "opl_id": opl_id,
+                    "cnt_itr": 0,
+                },
+            )
 
             try:
-                # Run the agent
                 run_length = 0
                 for _ in runner.run(
                     user_id=user_id,
@@ -114,62 +114,61 @@ def generate():
                     new_message=message,
                 ):
                     run_length += 1
-                
-                # If the agent ran successfully, break the loop
-                if run_length > 0:
-                    break
+
+                session = runner.session_service.get_session_sync(
+                    app_name="model_based_codegen",
+                    user_id=user_id,
+                    session_id=session_id,
+                )
+                if not session:
+                    last_failure = "Failed to load session after agent run"
+                    error_message("agentAPI", f"{last_failure} on retry {retry + 1}/{RETRIES}")
+                else:
+                    generated_code_zip = session.state.get("generated_code_zip")
+                    workflow_problem = session.state.get("workflow_problem")
+
+                    if generated_code_zip:
+                        try:
+                            zip_bytes = base64.b64decode(generated_code_zip)
+                            if is_valid_project_zip(zip_bytes):
+                                zip_file = BytesIO(zip_bytes)
+                                success_message(
+                                    "agentAPI",
+                                    f"Agent created {run_length} events on retry {retry + 1}, "
+                                    f"for user {user_id} with project name {session.state.get('project_name')}",
+                                )
+                                return send_file(
+                                    zip_file,
+                                    mimetype="application/zip",
+                                    as_attachment=True,
+                                    download_name=filename,
+                                )
+                            last_failure = "Generated zip is missing frontend/ and backend/ folders"
+                        except Exception:
+                            last_failure = "Generated code zip is not valid base64"
+                    elif workflow_problem:
+                        last_failure = str(workflow_problem)
+                    elif run_length == 0:
+                        last_failure = "Agent produced no events"
+                    else:
+                        last_failure = "No generated code zip in session"
+
+                    error_message(
+                        "agentAPI",
+                        f"{last_failure} on retry {retry + 1}/{RETRIES}",
+                    )
             except Exception as exc:
-                error_message("agentAPI", f"Failed to run the agent on retry {retry + 1}: {exc}")
+                last_failure = f"Failed to run the agent: {exc}"
+                error_message("agentAPI", f"{last_failure} on retry {retry + 1}/{RETRIES}")
+
+            if retry < RETRIES - 1:
                 time.sleep(3)
-                
-                # If this is the last retry, return an error
-                if retry == RETRIES - 1:
-                    error_message("agentAPI", "Failed to run the agent after all retries")
-                    return jsonify({
-                            "success": False,
-                            "message": "Failed to run the agent after all retries",
-                        }), 500
 
-        try:
-            session = runner.session_service.get_session_sync(
-                app_name="model_based_codegen",
-                user_id=user_id,
-                session_id=session_id,
-            )
-            if not session:
-                error_message("agentAPI", "Failed to create session")
-                return jsonify({
-                    "success": False,
-                    "message": "Failed to create session",
-                }), 500
-
-            # Generate the zip file
-            generated_code_zip = session.state.get('generated_code_zip')
-
-            if not generated_code_zip:
-                error_message("agentAPI", "No generated code zip in session")
-                return jsonify({
-                    "success": False,
-                    "message": "No generated code zip in session",
-                }), 500
-
-            zip_bytes = base64.b64decode(generated_code_zip)
-            zip_file = BytesIO(zip_bytes)
-
-            success_message("agentAPI", f"Agent created {run_length} events, for user {user_id} with project name {session.state.get('project_name')}")
-
-            return send_file(
-                zip_file,
-                mimetype="application/zip",
-                as_attachment=True,
-                download_name=filename,
-            )
-        except Exception as exc:
-            error_message("agentAPI", f"Zip file generation failed: {exc}")
-            return jsonify({
-                "success": False,
-                "message": f"Zip file generation failed: {exc}",
-            }), 500
+        error_message("agentAPI", f"Generate failed after {RETRIES} retries: {last_failure}")
+        return jsonify({
+            "success": False,
+            "message": last_failure,
+        }), 500
     except Exception as exc:
         error_message("agentAPI", f"Generate failed: {exc}")
         return jsonify({

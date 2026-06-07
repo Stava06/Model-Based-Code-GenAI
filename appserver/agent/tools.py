@@ -2,11 +2,18 @@
     ADK tool groups: Supervisor, Generator, Critic.
 """
 from __future__ import annotations
+import ast
 import base64
 import io
 import json
+import os
 import re
+import shutil
+import subprocess
+import sys
+import tempfile
 import zipfile
+from pathlib import Path
 from collections.abc import Callable
 from typing import Any
 from google.adk.tools import ToolContext
@@ -17,8 +24,16 @@ from agent.examples.eval_metrics_example import metrics_example
 from agent.examples.eval_example import evaluation_example
 from messages import start_message, error_message, success_message
 from extensions import call_gemini
-from .agent_tools.create_folder_dir import frontend_skeleton, backend_skeleton, generate_project_prompt
-
+from .agent_tools.create_folder_dir import (
+    frontend_skeleton,
+    backend_skeleton,
+    generate_project_prompt,
+    coverage_graph_schema,
+)
+from .agent_tools.coverage_graph import (
+    canonicalize_coverage_graph,
+    graph_similarity_score,
+)
 ##############################################################################################################################################################
 ##############################################################################################################################################################
 ##############################################################################################################################################################
@@ -256,10 +271,16 @@ def _parse_generated_project(raw: str) -> dict[str, Any]:
             + "; ".join(errors),
         }
 
+    raw_coverage_graph = payload.get("code_coverage_graph")
+    if not isinstance(raw_coverage_graph, dict):
+        raw_coverage_graph = {"nodes": []}
+    code_coverage_graph = canonicalize_coverage_graph(raw_coverage_graph)
+
     return {
         "status": "success",
         "frontend_files": frontend_files,
         "backend_files": backend_files,
+        "code_coverage_graph": code_coverage_graph,
     }
 
 def _strip_code_fences(text: str) -> str:
@@ -294,7 +315,12 @@ def _print_project_files_debug(frontend_files: dict[str, str], backend_files: di
             print(f"  {label}/{path} ({len(files[path])} chars)")
     print()
 
-def _build_project_folders(opl_logic_map: dict[str, Any],opl: str,project_name: str,project_slug: str,) -> tuple[dict[str, str], dict[str, str]]:
+def _build_project_folders(
+    opl_logic_map: dict[str, Any],
+    opl: str,
+    project_name: str,
+    project_slug: str,
+) -> tuple[dict[str, str], dict[str, str], dict[str, Any]]:
     """
     Build the project folders
 
@@ -305,11 +331,12 @@ def _build_project_folders(opl_logic_map: dict[str, Any],opl: str,project_name: 
         - project_slug : The slug of the project
 
     Returns:
-        - tuple[dict[str, str], dict[str, str]] : The project folders
+        - tuple[dict[str, str], dict[str, str], dict[str, Any]] : frontend, backend, coverage graph
     """
     # Build the frontend and backend files
     frontend_files = frontend_skeleton(project_name, project_slug)
     backend_files = backend_skeleton(project_name, project_slug)
+    code_coverage_graph: dict[str, Any] = {"nodes": []}
 
     # Generate the project prompt
     prompt = generate_project_prompt(opl_logic_map, opl, project_name, project_slug)
@@ -328,6 +355,7 @@ def _build_project_folders(opl_logic_map: dict[str, Any],opl: str,project_name: 
             # Merge the backend files
             backend_files = dict(backend_files)
             backend_files.update(parsed["backend_files"])
+            code_coverage_graph = parsed.get("code_coverage_graph", {"nodes": []})
         else:
             error_message("GeneratorTools", parsed.get("message", "invalid Gemini project JSON"),)
     else:
@@ -335,7 +363,7 @@ def _build_project_folders(opl_logic_map: dict[str, Any],opl: str,project_name: 
 
     _ensure_frontend_initialization(frontend_files, project_slug)
     _ensure_backend_initialization(backend_files)
-    return frontend_files, backend_files
+    return frontend_files, backend_files, code_coverage_graph
 
 def _sanitize_project_slug(name: str) -> str:
     """
@@ -424,7 +452,7 @@ class SupervisorTools:
                 opl_retrieved = response.get("data")
                 success_message("SupervisorTools", {"opl length": len(opl_retrieved) if opl_retrieved else 0})
 
-                return demo3
+                return opl_retrieved
             else:
                 error_message("SupervisorTools", response.get("message"))
                 return None
@@ -634,7 +662,9 @@ class GeneratorTools:
         tool_context.state["project_slug"] = slug
 
         # Build the project folders
-        frontend_files, backend_files = _build_project_folders(opl_logic_map, opl, display, slug)
+        frontend_files, backend_files, code_coverage_graph = _build_project_folders(
+            opl_logic_map, opl, display, slug
+        )
         _print_project_files_debug(frontend_files, backend_files)
 
         # Check if the frontend and backend files are valid
@@ -648,6 +678,7 @@ class GeneratorTools:
 
         # Set the generated code zip in the tool context
         tool_context.state["generated_code_zip"] = code_zip_base64
+        tool_context.state["code_coverage_graph"] = code_coverage_graph
 
         success_message("GeneratorTools", "Generated project " + project_name + " with zip length " + str(len(zip_bytes)))
         return {"status": "success", "message": "Project " + project_name + " generated successfully with zip length " + str(len(zip_bytes))}
@@ -713,77 +744,87 @@ class CriticTools:
     def __init__(self, db: DBconnection):
         self._db = db
 
-    def _graph_coverage_score(self, opl_id: str, code: str) -> float:
+    def _extract_opl_reference_graph(self, opl_id: str) -> dict[str, Any] | None:
         logic_map_response = self._db.get_latest_opl_logic_map()
         if logic_map_response.get("status") != "success":
             error_message("CriticTools", logic_map_response.get("message", "Failed to load logic map"))
-            return 0.0
+            return None
 
         opl_logic_map = logic_map_response.get("data", {}).get("opl_logic_map", {})
 
         opl_response = self._db.get_opl(opl_id)
         if opl_response.get("status") != "success":
-            error_message("CriticTools",opl_response.get("message", f"Failed to load OPL: {opl_id}"))
-            return 0.0
+            error_message("CriticTools", opl_response.get("message", f"Failed to load OPL: {opl_id}"))
+            return None
 
         opl = opl_response.get("data", "")
 
         prompt = (
-            "You are analyzing an OPL (Object-Process Language) specification.\n\n"
+            "You are analyzing an OPL (Object-Process Language) specification.\n"
+            "Extract every object and process from the OPL into a coverage graph.\n"
+            "Put states in each node's states[] array — "
+            "never as separate top-level nodes.\n\n"
             "Use this logic map to map each relation to the closest relation type "
             "(objects, processes, and relations sections):\n"
             f"{json.dumps(opl_logic_map, indent=2)}\n\n"
             "OPL specification:\n"
             f"{opl}\n\n"
-            "Task:\n"
-            "1. Identify every object and every process in the OPL.\n"
-            "2. Identify every relation between them; map each relation type using "
-            "the logic map relations section.\n"
-            "3. Return JSON with this exact shape:\n"
-            "{\n"
-            '  "nodes": [\n'
-            "    {\n"
-            '      "name": "<identified name>",\n'
-            '      "type": "object" | "process",\n'
-            '      "relations": [\n'
-            "        {\n"
-            '          "from": "<source node name>",\n'
-            '          "to": "<target node name>",\n'
-            '          "type": "<mapped relation type>"\n'
-            "        }\n"
-            "      ]\n"
-            "    }\n"
-            "  ]\n"
-            "}\n\n"
-            "Rules:\n"
-            "- One node per identified object or process.\n"
-            "- type must be exactly \"object\" or \"process\".\n"
-            "- Put each relation only on the from node's relations array "
-            "(never on the to node).\n"
-            "- from and to must match node name values exactly.\n"
-            "- Return only valid JSON.\n"
+            "Return only valid JSON with this schema:\n"
+            f"{coverage_graph_schema()}"
         )
 
         result = call_gemini(prompt)
         if result.get("status") != "success":
             error_message("CriticTools", result.get("message", "Gemini graph extraction failed"))
-            return 0.0
+            return None
 
         try:
-            payload = json.loads(_strip_code_fences(result.get("data", "")))
+            opl_coverage_graph = json.loads(_strip_code_fences(result.get("data", "")))
         except json.JSONDecodeError as exc:
             error_message("CriticTools", f"Invalid graph JSON from Gemini: {exc}")
-            return 0.0
+            return None
 
-        nodes_raw = payload.get("nodes")
-        if not isinstance(nodes_raw, list):
+        if not isinstance(opl_coverage_graph, dict) or not isinstance(opl_coverage_graph.get("nodes"), list):
             error_message("CriticTools", "Gemini response missing nodes array")
-            return 0.0
+            return None
 
-        print(nodes_raw)
+        return canonicalize_coverage_graph(opl_coverage_graph)
 
-        # TODO: compare graph nodes to generated code for coverage score
-        return 0.0
+    def _get_opl_reference_graph(
+        self, opl_id: str, tool_context: ToolContext | None = None
+    ) -> dict[str, Any] | None:
+        if tool_context is not None:
+            cached = tool_context.state.get("opl_reference_graph")
+            if isinstance(cached, dict) and isinstance(cached.get("nodes"), list):
+                return cached
+
+        opl_coverage_graph = self._extract_opl_reference_graph(opl_id)
+        if opl_coverage_graph is None:
+            return None
+
+        if tool_context is not None:
+            tool_context.state["opl_reference_graph"] = opl_coverage_graph
+        return opl_coverage_graph
+
+    def _graph_coverage_score(self,opl_id: str,code_coverage_graph: dict[str, Any] | None,tool_context: ToolContext | None = None,) -> dict[str, float]:
+        graph_coverage_scores = {
+            "entity_score": 0.0,
+            "state_score": 0.0,
+            "relation_score": 0.0,
+            "overall_score": 0.0,
+        }
+        
+        if not code_coverage_graph or not isinstance(code_coverage_graph, dict):
+            error_message("CriticTools", "No code_coverage_graph in session state")
+            return graph_coverage_scores
+
+        opl_coverage_graph = self._get_opl_reference_graph(opl_id, tool_context)
+        if opl_coverage_graph is None:
+            return graph_coverage_scores
+
+        graph_coverage_scores = graph_similarity_score(opl_coverage_graph, code_coverage_graph)
+        success_message("CriticTools", {"graph_coverage": graph_coverage_scores})
+        return graph_coverage_scores
 
     def get_evaluation_metrics(self) -> dict[str, Any]:
         """
@@ -798,15 +839,194 @@ class CriticTools:
         start_message("CriticTools", "Get evaluation metrics")
 
         # Evaluation metrics
-        eval_metrics = [
-            {"name": "graph coverage", "weight": 0.5, "description": "The graph is fully covered, which means all the objects and processes of the given OPLare represented in the code"},
-            {"name": "code BLEU", "weight": 0.5, "description": "The generated code is syntactically and semantically correct, while being executable"},
-        ]
+        eval_metrics = {
+            "graph_coverage":{ 
+                "weight": 0.5, 
+                "description": "The graph is fully covered, which means all the objects and processes of the given OPLare represented in the code"
+                },
+            "code_bleu":{ 
+                "weight": 0.5, 
+                "description": "Syntax-valid and executable generated code (parse + build smoke tests)"
+                },
+        }
 
-        success_message("CriticTools", f"Fetched evaluation metrics: Graph coverage {eval_metrics[0]['weight']}, Code BLEU {eval_metrics[1]['weight']}")
+        success_message("CriticTools", {"eval_metrics": eval_metrics})
         return eval_metrics
 
-    def generate_code_evaluation(self, project_name: str, opl_id: str, code: str, metrics: list[dict[str, Any]]) -> dict[str, Any]:
+    def _syntax_and_executable_score(self, code: str) -> dict[str, float]:
+        empty = {"syntax_score": 0.0, "executable_score": 0.0, "overall_score": 0.0}
+        if not code or not str(code).strip():
+            error_message("CriticTools", "No code provided for syntax/executable scoring")
+            return empty
+
+        syntax_results: list[bool] = []
+        executable_results: list[bool] = []
+        project_root: Path | None = None
+        temp_dir: tempfile.TemporaryDirectory[str] | None = None
+        code_text = str(code).strip()
+
+        def _check_python_syntax(source: str, label: str) -> None:
+            try:
+                ast.parse(source)
+                syntax_results.append(True)
+            except SyntaxError as exc:
+                error_message("CriticTools", f"Python syntax error in {label}: {exc}")
+                syntax_results.append(False)
+
+        def _check_js_syntax(file_path: Path) -> None:
+            if shutil.which("node") is None:
+                error_message("CriticTools", f"Node.js not found; skipping JS syntax for {file_path.name}")
+                syntax_results.append(False)
+                return
+            script = (
+                "const parser=require('@babel/parser');"
+                "const fs=require('fs');"
+                "parser.parse(fs.readFileSync(process.argv[1],'utf8'),"
+                "{sourceType:'module',plugins:['jsx']});"
+            )
+            babel_cmd = ["npx", "--yes", "-p", "@babel/parser", "node", "-e", script, str(file_path)]
+            babel_kwargs: dict[str, Any] = {
+                "capture_output": True,
+                "text": True,
+                "timeout": 120,
+                "cwd": str(file_path.parent),
+            }
+            if os.name == "nt":
+                babel_kwargs["shell"] = True
+            result = subprocess.run(babel_cmd, **babel_kwargs)
+            if result.returncode == 0:
+                syntax_results.append(True)
+            else:
+                detail = (result.stderr or result.stdout or "babel parse failed").strip()
+                error_message("CriticTools", f"JS syntax error in {file_path.name}: {detail[:300]}")
+                syntax_results.append(False)
+
+        def _run_command(command: list[str], cwd: Path, label: str, timeout: int = 180) -> bool:
+            run_kwargs: dict[str, Any] = {
+                "cwd": str(cwd),
+                "capture_output": True,
+                "text": True,
+                "timeout": timeout,
+            }
+            if os.name == "nt" and command and command[0] in {"npm", "npx"}:
+                run_kwargs["shell"] = True
+            result = subprocess.run(command, **run_kwargs)
+            if result.returncode == 0:
+                executable_results.append(True)
+                return True
+            detail = (result.stderr or result.stdout or f"{label} failed").strip()
+            error_message("CriticTools", f"{label}: {detail[:300]}")
+            executable_results.append(False)
+            return False
+
+        try:
+            zip_bytes = base64.b64decode(code_text, validate=True)
+            temp_dir = tempfile.TemporaryDirectory(prefix="critic-eval-")
+            project_root = Path(temp_dir.name)
+            with zipfile.ZipFile(io.BytesIO(zip_bytes), "r") as zf:
+                zf.extractall(project_root)
+        except Exception:
+            _check_python_syntax(code_text, "inline code")
+            syntax_score = 100.0 if syntax_results and all(syntax_results) else 0.0
+            result = {
+                "syntax_score": syntax_score,
+                "executable_score": 0.0,
+                "overall_score": round(syntax_score / 2, 2),
+            }
+            success_message("CriticTools", {"syntax_executable": result})
+            return result
+
+        try:
+            backend_dir = project_root / "backend"
+            frontend_dir = project_root / "frontend"
+
+            for file_path in project_root.rglob("*"):
+                if not file_path.is_file():
+                    continue
+                suffix = file_path.suffix.lower()
+                if suffix == ".py":
+                    try:
+                        _check_python_syntax(
+                            file_path.read_text(encoding="utf-8"),
+                            str(file_path.relative_to(project_root)),
+                        )
+                    except OSError as exc:
+                        error_message("CriticTools", f"Failed to read {file_path.name}: {exc}")
+                        syntax_results.append(False)
+                elif suffix in {".js", ".jsx"}:
+                    _check_js_syntax(file_path)
+
+            if backend_dir.is_dir():
+                requirements = backend_dir / "requirements.txt"
+                if requirements.is_file():
+                    _run_command(
+                        [sys.executable, "-m", "pip", "install", "-r", "requirements.txt"],
+                        backend_dir,
+                        "backend pip install",
+                        timeout=180,
+                    )
+                if any(backend_dir.rglob("*.py")):
+                    _run_command(
+                        [sys.executable, "-m", "compileall", "-q", "."],
+                        backend_dir,
+                        "backend compileall",
+                        timeout=120,
+                    )
+
+            if frontend_dir.is_dir() and (frontend_dir / "package.json").is_file():
+                npm_install_ok = _run_command(
+                    ["npm", "install"],
+                    frontend_dir,
+                    "frontend npm install",
+                    timeout=300,
+                )
+                if npm_install_ok:
+                    _run_command(
+                        ["npx", "vite", "build"],
+                        frontend_dir,
+                        "frontend vite build",
+                        timeout=300,
+                    )
+        finally:
+            if temp_dir is not None:
+                temp_dir.cleanup()
+
+        if not syntax_results:
+            error_message("CriticTools", "No Python/JS source files found for syntax scoring")
+            syntax_score = 0.0
+        else:
+            syntax_score = round((sum(syntax_results) / len(syntax_results)) * 100, 2)
+
+        if not executable_results:
+            executable_score = 0.0
+        else:
+            executable_score = round((sum(executable_results) / len(executable_results)) * 100, 2)
+
+        result = {
+            "syntax_score": syntax_score,
+            "executable_score": executable_score,
+            "overall_score": round((syntax_score + executable_score) / 2, 2),
+        }
+        success_message(
+            "CriticTools",
+            {
+                "syntax_executable": {
+                    **result,
+                    "syntax_checks": len(syntax_results),
+                    "executable_checks": len(executable_results),
+                }
+            },
+        )
+        return result
+
+    def generate_code_evaluation(
+        self,
+        project_name: str,
+        opl_id: str,
+        code: str,
+        metrics: list[dict[str, Any]] | dict[str, Any],
+        tool_context: ToolContext,
+    ) -> dict[str, Any]:
         """
         Produce code-level evaluation results
 
@@ -815,16 +1035,85 @@ class CriticTools:
             - opl_id : The OPL ID
             - code : The generated code
             - metrics : The evaluation metrics
+            - tool_context : Session state (reads code_coverage_graph)
 
         Returns:
             - dict[str, Any] : The evaluation results
         """
         start_message("CriticTools", "Generate code evaluation for " + project_name)
 
-        graph_coverage_score = self._graph_coverage_score(opl_id, code)
+        graph_metric: dict[str, Any] | None = None
+        syntax_metric: dict[str, Any] | None = None
 
-        success_message("CriticTools", "generate_code_evaluation")
-        return {"status": "success", "evaluation": 100.0}
+        if isinstance(metrics, dict):
+            graph_metric = metrics.get("graph_coverage")
+            syntax_metric = metrics.get("code_bleu")
+        elif isinstance(metrics, list):
+            for metric in metrics:
+                if not isinstance(metric, dict):
+                    continue
+                name = str(metric.get("name", "")).lower()
+                if "graph" in name and "coverage" in name:
+                    graph_metric = metric
+                elif any(
+                    token in name
+                    for token in ("syntax", "executable", "bleu", "code bleu")
+                ):
+                    syntax_metric = metric
+
+        if not graph_metric or not syntax_metric:
+            error_message("CriticTools", "No graph coverage or syntax/executable metric found")
+            return {
+                "status": "error",
+                "message": "No graph coverage or syntax/executable metric found",
+            }
+
+        graph_weight = float(graph_metric.get("weight") or 0.0)
+        syntax_weight = float(syntax_metric.get("weight") or 0.0)
+        total_weight = graph_weight + syntax_weight or 1.0
+
+        code_coverage_graph = tool_context.state.get("code_coverage_graph")
+        coverage_scores = self._graph_coverage_score(opl_id, code_coverage_graph, tool_context)
+        syntax_scores = self._syntax_and_executable_score(code)
+
+        graph_coverage_score = coverage_scores["overall_score"]
+        syntax_and_executable_score = syntax_scores["overall_score"]
+        overall_score = round(
+            (
+                graph_coverage_score * graph_weight
+                + syntax_and_executable_score * syntax_weight
+            )
+            / total_weight,
+            2,
+        )
+
+        evaluation = {
+            "graph_coverage": {
+                "score": graph_coverage_score,
+                "breakdown": {
+                    "entity_score": coverage_scores["entity_score"],
+                    "state_score": coverage_scores["state_score"],
+                    "relation_score": coverage_scores["relation_score"],
+                },
+            },
+            "syntax_and_executable": {
+                "score": syntax_and_executable_score,
+                "breakdown": {
+                    "syntax_score": syntax_scores["syntax_score"],
+                    "executable_score": syntax_scores["executable_score"],
+                },
+            },
+            "overall_score": overall_score,
+        }
+        tool_context.state["code_evaluation"] = evaluation
+
+        response = self._db.save_opl_evaluation_scores(opl_id, evaluation)
+        if response.get("status") != "success":
+            error_message("CriticTools", response.get("message"))
+            return {"status": "error", "message": response.get("message")}
+
+        success_message("CriticTools", {"evaluation": evaluation})
+        return {"status": "success", "evaluation": evaluation}
 
     def adk_tools(self) -> list[Callable[..., Any]]:
         return [
