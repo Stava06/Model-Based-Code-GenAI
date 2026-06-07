@@ -2,17 +2,18 @@ import os
 from pathlib import Path
 from dotenv import load_dotenv
 
-
 class Config:
     """
     Config loader for the app server (singleton).
     """
-    _config = None
+    # The configuration dictionary
+    _config: dict | None = None
 
     def __new__(cls):
         """
         Create a new instance of the Config class
         """
+        # Check if the configuration dictionary is not loaded
         if cls._config is None:
             cls._config = cls._load_config()
         return cls._config
@@ -20,7 +21,10 @@ class Config:
     @classmethod
     def _load_config(cls):
         """
-        Load the configuration from the .env file
+            Load the configuration from the .env file
+
+            returns:
+                - config: The configuration dictionary
         """
         # Get the path to the .env file
         env_path = Path(__file__).resolve().parent / ".env"
@@ -44,6 +48,7 @@ class Config:
             "gemini": {
                 "api_key": os.getenv("GEMINI_API_KEY"),
                 "model": os.getenv("GEMINI_MODEL") or "gemini-2.5-flash",
+                "app_name": os.getenv("GEMINI_APP_NAME") or "model_based_codegen",
             },
         }
 

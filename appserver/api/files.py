@@ -6,63 +6,68 @@
 """
 
 from flask import Blueprint, request
-from flask import jsonify
+from flask import jsonify, current_app
 from messages import start_message, success_message, error_message
 
 # Create the agent API blueprint
 filesAPI = Blueprint("fileAPI", __name__, url_prefix="/file")
 
-# Error message for login
+# Error message for get file
 ERROR_GET_FILE_MSG = {
     'success': False,
     'message': None,
     'data': None,
 }
 
+def _files_collection() -> dict:
+    """
+        Get the files collection
+
+        returns:
+            - conn: The connection to the files collection
+    """
+    conn = current_app.extensions.get("files_collection")
+
+    # Check if the database is configured
+    if conn is None:
+        error_message('filesAPI', "Database not configured")
+
+        # Set the error message
+        ERROR_GET_FILE_MSG['message'] = "Database not configured"
+
+        return jsonify(ERROR_GET_FILE_MSG), 503   
+
+    return conn
+
 @filesAPI.get("/")
 def index():
     """
-        Index page for the files API
-    """
-    start_message("files", "Index page")
+        Health check for the files API
 
-    # TODO: Health check for the files API
-    answer = {
+        returns:
+            - health_check: health check for the files API
+    """
+    start_message("filesAPI", "Index route")
+
+    health_check = {
         "service": "files",
-        "message": "not implemented",
-        "success": True,
+        "success": _files_collection() is not None,
+        "is_ready": _files_collection() is not None,
+        "count": _files_collection().count_documents({}) if _files_collection() is not None else 0,
     }
 
-    success_message("files", "Index page loaded successfully")
-    return jsonify(answer), 200
+    success_message("filesAPI", f"Health check is {"OK" if health_check['success'] else "FAILED"}")
+    return jsonify(health_check), 200 if health_check['success'] else 503
 
 
-# TODO: Implement the get_opl_file function
 @filesAPI.get("/get")
 def get_opl_file():
     """
         Get a file by id or all files from user (email or id)
+        
+        returns:
+            - opl_file: The OPL file retrieved
     """
+    start_message("filesAPI", "Get OPL file route")
 
-    start_message("files", {"action": "get_opl_file"})
-
-    global ERROR_GET_FILE_MSG
-    error_msg = ERROR_GET_FILE_MSG
-
-    if not request.args:
-        error_msg['message'] = "email or id is required"
-        error_msg['email'] = True
-        error_msg['id'] = True
-        return jsonify(error_msg), 400
-
-    # Get the email or id from the request
-    email = request.args.get("email")
-    id = request.args.get("id")
-
-    # Check if the email is missing
-    if not email:
-        error_msg['email'] = True
-        error_msg['message'] = "email is required"
-        return jsonify(error_msg), 400
-
-    # Check if the id is missing
+    return jsonify({"message": "Not implemented"}), 501

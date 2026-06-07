@@ -1,23 +1,21 @@
 """
-    Roles module for the agent (Supervisor, Generator, Critic).
+    Roles module for the agent (Supervisor, Generator, Critic)
 
     Includes:
-        - supervisor_role : ADK instruction text for the Supervisor role.
-        - generator_role : ADK instruction text for the Generator role.
-        - critic_role : ADK instruction text for the Critic role.
-        - supervisor_description : Routing description for the Supervisor role.
-        - generator_description : Routing description for the Generator role.
-        - critic_description : Routing description for the Critic role.
+      - _generator_role : Generator role workflow as instruction text
+      - _critic_role : Critic role workflow as instruction text
+      - supervisor_role : Supervisor role workflow as instruction text
 """
 
 def _generator_role() -> str:
-    """
-    ADK instruction text for the Generator role.
+   """
+      Generator role workflow as instruction text
 
-    Mirrors the Generator - Instruction flowchart.
-    """
+      returns:
+        - str : The Generator role workflow
+   """
 
-    return """
+   return """
     You are the Generator Agent. Your job is to run a fixed tool sequence and produce
     `generated_code_zip` in session before you hand off to the Supervisor.
 
@@ -80,15 +78,15 @@ def _generator_role() -> str:
     - If `generate_code` cannot run, hand off to Supervisor with a clear problem — do not pretend the zip exists.
     """
 
-
 def _critic_role() -> str:
-    """
-    ADK instruction text for the Critic role.
+   """
+      Critic role workflow as instruction text
 
-    Mirrors the Critic - Instruction flowchart.
-    """
+      returns:
+      - str : The Critic role workflow
+   """
 
-    return """
+   return """
     You are the Critic Agent. You load the OPL logic map, run code evaluation, change the OPL logic map based 
     on the evaluation results and return control to the Supervisor.
 
@@ -125,13 +123,18 @@ def _critic_role() -> str:
     """
 
 def supervisor_role(max_itr: int = 10, opl_id: str = None) -> str:
-    """
-    ADK instruction text for the Supervisor role.
+   """
+      Supervisor role workflow as instruction text
 
-    Mirrors the Supervisor - Instruction flowchart.
-    """
+      params:
+        - max_itr: Maximum iterations before forced finish
+        - opl_id: OPL ID for this run
 
-    return f"""
+      returns:
+        - str : The Supervisor role workflow
+   """
+
+   return f"""
     You are the Supervisor Agent. You orchestrate OPL intake, iteration,
     role handoffs, and final problem delivery.
 
@@ -196,4 +199,4 @@ def supervisor_role(max_itr: int = 10, opl_id: str = None) -> str:
 
     - Run all steps before handing off.
     - If got a report of a problem, go to generate_problem and report the problem.
-    """
+   """

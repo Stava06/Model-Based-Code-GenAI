@@ -1,15 +1,19 @@
 from flask import Flask, jsonify
 from flask_cors import CORS
-from api.agent_api import agentAPI
 from api.users import userAPI
+from api.agent_api import agentAPI
 from config import Config
 from extensions import init_mongo
-from messages import start_message, success_message, error_message
+from messages import start_message, success_message, error_message, info_message
 import socket
-
 
 """
     App server for the application
+
+    Includes:
+        - app: The Flask app instance
+        - index: The index route
+        - __main__: The main function
 """
 
 # Initialize the Flask app
@@ -18,7 +22,7 @@ CORS(app)
 
 @app.route("/")
 def index():
-    start_message('main')
+    start_message('main', "Index route")
 
     answer = {
         "service": "appserver",
@@ -36,7 +40,7 @@ def index():
         }
     }
 
-    success_message('main', "Index page loaded successfully")
+    success_message('main', "Index route loaded successfully")
     return jsonify(answer), 200
 
 if __name__ == "__main__":
@@ -54,16 +58,16 @@ if __name__ == "__main__":
     while not is_port_available or port > 65535:
         with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as probe:
             if probe.connect_ex(("127.0.0.1", port)) == 0:
-                print(f'Port {port} is already in use. Changing to port {port + 1}')
+                info_message("server", f"Port {port} is already in use. Changing to port {port + 1}")
                 port += 1
             else:
                 is_port_available = True
 
     if port > 65535:
-        error_message('server', 'No port available')
+        error_message("server", "No port available")
         exit(1)
     else:
-        success_message('server', f'Running on port {port}')
+        success_message("server", f"Running on port {port}")
     
     # Run the app
     app.run(
