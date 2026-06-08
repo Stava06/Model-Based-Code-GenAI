@@ -6,14 +6,8 @@ import ast
 import base64
 import io
 import json
-import os
 import re
-import shutil
-import subprocess
-import sys
-import tempfile
 import zipfile
-from pathlib import Path
 from collections.abc import Callable
 from typing import Any
 from google.adk.tools import ToolContext
@@ -31,8 +25,14 @@ from .agent_tools.create_folder_dir import (
     coverage_graph_schema,
 )
 from .agent_tools.coverage_graph import (
+    build_reference_graph_from_opl,
     canonicalize_coverage_graph,
+    coerce_coverage_graph,
     graph_similarity_score,
+)
+from .agent_tools.execution_readiness import (
+    run_execution_readiness_checks,
+    execution_readiness_score,
 )
 ##############################################################################################################################################################
 ##############################################################################################################################################################
@@ -271,8 +271,10 @@ def _parse_generated_project(raw: str) -> dict[str, Any]:
             + "; ".join(errors),
         }
 
-    raw_coverage_graph = payload.get("code_coverage_graph")
-    if not isinstance(raw_coverage_graph, dict):
+    raw_coverage_graph = coerce_coverage_graph(payload.get("code_coverage_graph")) or coerce_coverage_graph(
+        payload
+    )
+    if raw_coverage_graph is None:
         raw_coverage_graph = {"nodes": []}
     code_coverage_graph = canonicalize_coverage_graph(raw_coverage_graph)
 
@@ -391,6 +393,66 @@ def _resolve_project_name(
     if not display:
         display = "OPL Project"
     return display, _sanitize_project_slug(display)
+
+def _zip_normalize_path(path: str) -> str:
+    return path.replace("\\", "/").lstrip("/")
+
+
+def _zip_file_map(zip_bytes: bytes) -> dict[str, str]:
+    files: dict[str, str] = {}
+    with zipfile.ZipFile(io.BytesIO(zip_bytes), "r") as zf:
+        for name in zf.namelist():
+            if name.endswith("/"):
+                continue
+            normalized = _zip_normalize_path(name)
+            try:
+                files[normalized] = zf.read(name).decode("utf-8")
+            except UnicodeDecodeError:
+                files[normalized] = ""
+    return files
+
+
+def _check_js_structure(source: str) -> bool:
+    """Lightweight JS/JSX syntax sanity check without Node or subprocess."""
+    if not source.strip():
+        return False
+
+    stack: list[str] = []
+    in_string: str | None = None
+    escape = False
+    pairs = {"(": ")", "[": "]", "{": "}"}
+
+    for ch in source:
+        if escape:
+            escape = False
+            continue
+        if ch == "\\" and in_string:
+            escape = True
+            continue
+        if in_string:
+            if ch == in_string:
+                in_string = None
+            continue
+        if ch in ("'", '"', "`"):
+            in_string = ch
+            continue
+        if ch in pairs:
+            stack.append(pairs[ch])
+        elif ch in pairs.values():
+            if not stack or stack.pop() != ch:
+                return False
+
+    return not stack and in_string is None
+
+
+def _check_python_syntax(source: str) -> bool:
+    try:
+        ast.parse(source)
+        compile(source, "<generated>", "exec")
+        return True
+    except (SyntaxError, ValueError):
+        return False
+
 
 def is_valid_project_zip(zip_bytes: bytes) -> bool:
     """
@@ -652,10 +714,8 @@ class GeneratorTools:
         Returns:
             - dict[str, Any] : The result
         """
-        start_message("GeneratorTools", "Generate project code for " + project_name)
-
-        display = project_name.strip() or "OPL Project"
-        slug = _sanitize_project_slug(display)
+        display, slug = _resolve_project_name(project_name, tool_context)
+        start_message("GeneratorTools", "Generate project code for " + display)
 
         # Set the project name and slug in the tool context
         tool_context.state["project_name"] = display
@@ -680,8 +740,17 @@ class GeneratorTools:
         tool_context.state["generated_code_zip"] = code_zip_base64
         tool_context.state["code_coverage_graph"] = code_coverage_graph
 
-        success_message("GeneratorTools", "Generated project " + project_name + " with zip length " + str(len(zip_bytes)))
-        return {"status": "success", "message": "Project " + project_name + " generated successfully with zip length " + str(len(zip_bytes))}
+        success_message(
+            "GeneratorTools",
+            "Generated project " + display + " with zip length " + str(len(zip_bytes)),
+        )
+        return {
+            "status": "success",
+            "message": "Project "
+            + display
+            + " generated successfully with zip length "
+            + str(len(zip_bytes)),
+        }
 
     def save_generated_code(self, tool_context: ToolContext) -> dict[str, Any]:
         """
@@ -773,22 +842,37 @@ class CriticTools:
             f"{coverage_graph_schema()}"
         )
 
+        def _parse_graph_response(raw: str) -> dict[str, Any] | None:
+            try:
+                payload = json.loads(_strip_code_fences(raw))
+            except json.JSONDecodeError as exc:
+                error_message("CriticTools", f"Invalid graph JSON from Gemini: {exc}")
+                return None
+
+            coerced = coerce_coverage_graph(payload)
+            if coerced is None or not isinstance(coerced.get("nodes"), list):
+                error_message("CriticTools", "Gemini response missing nodes array")
+                return None
+            return canonicalize_coverage_graph(coerced)
+
         result = call_gemini(prompt)
         if result.get("status") != "success":
             error_message("CriticTools", result.get("message", "Gemini graph extraction failed"))
             return None
 
-        try:
-            opl_coverage_graph = json.loads(_strip_code_fences(result.get("data", "")))
-        except json.JSONDecodeError as exc:
-            error_message("CriticTools", f"Invalid graph JSON from Gemini: {exc}")
-            return None
+        parsed = _parse_graph_response(result.get("data", ""))
+        if parsed is not None:
+            return parsed
 
-        if not isinstance(opl_coverage_graph, dict) or not isinstance(opl_coverage_graph.get("nodes"), list):
-            error_message("CriticTools", "Gemini response missing nodes array")
+        retry_prompt = (
+            prompt
+            + "\n\nYour previous response was invalid. Return ONLY a JSON object with a "
+            "top-level \"nodes\" array. Each node must include name, type, states, and relations."
+        )
+        retry = call_gemini(retry_prompt)
+        if retry.get("status") != "success":
             return None
-
-        return canonicalize_coverage_graph(opl_coverage_graph)
+        return _parse_graph_response(retry.get("data", ""))
 
     def _get_opl_reference_graph(
         self, opl_id: str, tool_context: ToolContext | None = None
@@ -799,6 +883,19 @@ class CriticTools:
                 return cached
 
         opl_coverage_graph = self._extract_opl_reference_graph(opl_id)
+        if opl_coverage_graph is None:
+            opl_response = self._db.get_opl(opl_id)
+            if opl_response.get("status") == "success":
+                fallback = canonicalize_coverage_graph(
+                    build_reference_graph_from_opl(opl_response.get("data", ""))
+                )
+                if fallback.get("nodes"):
+                    opl_coverage_graph = fallback
+                    success_message(
+                        "CriticTools",
+                        {"opl_reference_graph": "built from OPL text (Gemini fallback)"},
+                    )
+
         if opl_coverage_graph is None:
             return None
 
@@ -818,13 +915,40 @@ class CriticTools:
             error_message("CriticTools", "No code_coverage_graph in session state")
             return graph_coverage_scores
 
+        if not code_coverage_graph.get("nodes"):
+            error_message("CriticTools", "code_coverage_graph has no nodes")
+            return graph_coverage_scores
+
         opl_coverage_graph = self._get_opl_reference_graph(opl_id, tool_context)
         if opl_coverage_graph is None:
+            error_message(
+                "CriticTools",
+                "Could not build OPL reference graph (Gemini and OPL-text fallback failed)",
+            )
             return graph_coverage_scores
 
         graph_coverage_scores = graph_similarity_score(opl_coverage_graph, code_coverage_graph)
         success_message("CriticTools", {"graph_coverage": graph_coverage_scores})
         return graph_coverage_scores
+
+    @staticmethod
+    def _default_evaluation_metrics() -> dict[str, Any]:
+        return {
+            "graph_coverage": {
+                "weight": 0.5,
+                "description": (
+                    "The graph is fully covered, which means all the objects and "
+                    "processes of the given OPLare represented in the code"
+                ),
+            },
+            "code_bleu": {
+                "weight": 0.5,
+                "description": (
+                    "Syntax-valid code and static execution-readiness checks "
+                    "(Flask/React wiring, routes, imports, entrypoints; no server build/run)"
+                ),
+            },
+        }
 
     def get_evaluation_metrics(self) -> dict[str, Any]:
         """
@@ -837,159 +961,63 @@ class CriticTools:
                 - dict[str, Any] : The evaluation metrics
         """
         start_message("CriticTools", "Get evaluation metrics")
-
-        # Evaluation metrics
-        eval_metrics = {
-            "graph_coverage":{ 
-                "weight": 0.5, 
-                "description": "The graph is fully covered, which means all the objects and processes of the given OPLare represented in the code"
-                },
-            "code_bleu":{ 
-                "weight": 0.5, 
-                "description": "Syntax-valid and executable generated code (parse + build smoke tests)"
-                },
-        }
-
+        eval_metrics = self._default_evaluation_metrics()
         success_message("CriticTools", {"eval_metrics": eval_metrics})
         return eval_metrics
 
-    def _syntax_and_executable_score(self, code: str) -> dict[str, float]:
+    def _decode_project_zip(self, code_zip_b64: str) -> bytes | None:
+        code_text = str(code_zip_b64).strip()
+        if not code_text:
+            return None
+        for validate in (True, False):
+            try:
+                zip_bytes = base64.b64decode(code_text, validate=validate)
+                if is_valid_project_zip(zip_bytes):
+                    return zip_bytes
+            except Exception:
+                continue
+        return None
+
+    def _syntax_and_executable_score(self, code_zip_b64: str) -> dict[str, float]:
         empty = {"syntax_score": 0.0, "executable_score": 0.0, "overall_score": 0.0}
-        if not code or not str(code).strip():
-            error_message("CriticTools", "No code provided for syntax/executable scoring")
+        zip_bytes = self._decode_project_zip(code_zip_b64)
+        if zip_bytes is None:
+            error_message(
+                "CriticTools",
+                "No valid project zip for syntax/executable scoring "
+                "(expected base64-encoded zip with frontend/ and backend/)",
+            )
             return empty
 
         syntax_results: list[bool] = []
-        executable_results: list[bool] = []
-        project_root: Path | None = None
-        temp_dir: tempfile.TemporaryDirectory[str] | None = None
-        code_text = str(code).strip()
+        files = _zip_file_map(zip_bytes)
 
-        def _check_python_syntax(source: str, label: str) -> None:
-            try:
-                ast.parse(source)
-                syntax_results.append(True)
-            except SyntaxError as exc:
-                error_message("CriticTools", f"Python syntax error in {label}: {exc}")
-                syntax_results.append(False)
+        for path, source in sorted(files.items()):
+            suffix = path.rsplit(".", 1)[-1].lower() if "." in path else ""
+            if suffix == "py":
+                ok = _check_python_syntax(source)
+                syntax_results.append(ok)
+                if not ok:
+                    error_message("CriticTools", f"Python syntax error in {path}")
+            elif suffix == "json":
+                try:
+                    json.loads(source)
+                    syntax_results.append(True)
+                except json.JSONDecodeError as exc:
+                    error_message("CriticTools", f"JSON syntax error in {path}: {exc}")
+                    syntax_results.append(False)
+            elif suffix in {"js", "jsx"}:
+                ok = _check_js_structure(source)
+                syntax_results.append(ok)
+                if not ok:
+                    error_message("CriticTools", f"JS/JSX structure error in {path}")
 
-        def _check_js_syntax(file_path: Path) -> None:
-            if shutil.which("node") is None:
-                error_message("CriticTools", f"Node.js not found; skipping JS syntax for {file_path.name}")
-                syntax_results.append(False)
-                return
-            script = (
-                "const parser=require('@babel/parser');"
-                "const fs=require('fs');"
-                "parser.parse(fs.readFileSync(process.argv[1],'utf8'),"
-                "{sourceType:'module',plugins:['jsx']});"
-            )
-            babel_cmd = ["npx", "--yes", "-p", "@babel/parser", "node", "-e", script, str(file_path)]
-            babel_kwargs: dict[str, Any] = {
-                "capture_output": True,
-                "text": True,
-                "timeout": 120,
-                "cwd": str(file_path.parent),
-            }
-            if os.name == "nt":
-                babel_kwargs["shell"] = True
-            result = subprocess.run(babel_cmd, **babel_kwargs)
-            if result.returncode == 0:
-                syntax_results.append(True)
-            else:
-                detail = (result.stderr or result.stdout or "babel parse failed").strip()
-                error_message("CriticTools", f"JS syntax error in {file_path.name}: {detail[:300]}")
-                syntax_results.append(False)
-
-        def _run_command(command: list[str], cwd: Path, label: str, timeout: int = 180) -> bool:
-            run_kwargs: dict[str, Any] = {
-                "cwd": str(cwd),
-                "capture_output": True,
-                "text": True,
-                "timeout": timeout,
-            }
-            if os.name == "nt" and command and command[0] in {"npm", "npx"}:
-                run_kwargs["shell"] = True
-            result = subprocess.run(command, **run_kwargs)
-            if result.returncode == 0:
-                executable_results.append(True)
-                return True
-            detail = (result.stderr or result.stdout or f"{label} failed").strip()
-            error_message("CriticTools", f"{label}: {detail[:300]}")
-            executable_results.append(False)
-            return False
-
-        try:
-            zip_bytes = base64.b64decode(code_text, validate=True)
-            temp_dir = tempfile.TemporaryDirectory(prefix="critic-eval-")
-            project_root = Path(temp_dir.name)
-            with zipfile.ZipFile(io.BytesIO(zip_bytes), "r") as zf:
-                zf.extractall(project_root)
-        except Exception:
-            _check_python_syntax(code_text, "inline code")
-            syntax_score = 100.0 if syntax_results and all(syntax_results) else 0.0
-            result = {
-                "syntax_score": syntax_score,
-                "executable_score": 0.0,
-                "overall_score": round(syntax_score / 2, 2),
-            }
-            success_message("CriticTools", {"syntax_executable": result})
-            return result
-
-        try:
-            backend_dir = project_root / "backend"
-            frontend_dir = project_root / "frontend"
-
-            for file_path in project_root.rglob("*"):
-                if not file_path.is_file():
-                    continue
-                suffix = file_path.suffix.lower()
-                if suffix == ".py":
-                    try:
-                        _check_python_syntax(
-                            file_path.read_text(encoding="utf-8"),
-                            str(file_path.relative_to(project_root)),
-                        )
-                    except OSError as exc:
-                        error_message("CriticTools", f"Failed to read {file_path.name}: {exc}")
-                        syntax_results.append(False)
-                elif suffix in {".js", ".jsx"}:
-                    _check_js_syntax(file_path)
-
-            if backend_dir.is_dir():
-                requirements = backend_dir / "requirements.txt"
-                if requirements.is_file():
-                    _run_command(
-                        [sys.executable, "-m", "pip", "install", "-r", "requirements.txt"],
-                        backend_dir,
-                        "backend pip install",
-                        timeout=180,
-                    )
-                if any(backend_dir.rglob("*.py")):
-                    _run_command(
-                        [sys.executable, "-m", "compileall", "-q", "."],
-                        backend_dir,
-                        "backend compileall",
-                        timeout=120,
-                    )
-
-            if frontend_dir.is_dir() and (frontend_dir / "package.json").is_file():
-                npm_install_ok = _run_command(
-                    ["npm", "install"],
-                    frontend_dir,
-                    "frontend npm install",
-                    timeout=300,
-                )
-                if npm_install_ok:
-                    _run_command(
-                        ["npx", "vite", "build"],
-                        frontend_dir,
-                        "frontend vite build",
-                        timeout=300,
-                    )
-        finally:
-            if temp_dir is not None:
-                temp_dir.cleanup()
+        execution_checks = run_execution_readiness_checks(files)
+        execution_summary = execution_readiness_score(execution_checks)
+        for check in execution_checks:
+            if not check.passed:
+                detail = f"{check.name}: {check.detail}" if check.detail else check.name
+                error_message("CriticTools", f"Execution readiness failed — {detail}")
 
         if not syntax_results:
             error_message("CriticTools", "No Python/JS source files found for syntax scoring")
@@ -997,10 +1025,7 @@ class CriticTools:
         else:
             syntax_score = round((sum(syntax_results) / len(syntax_results)) * 100, 2)
 
-        if not executable_results:
-            executable_score = 0.0
-        else:
-            executable_score = round((sum(executable_results) / len(executable_results)) * 100, 2)
+        executable_score = float(execution_summary["executable_score"])
 
         result = {
             "syntax_score": syntax_score,
@@ -1013,34 +1038,38 @@ class CriticTools:
                 "syntax_executable": {
                     **result,
                     "syntax_checks": len(syntax_results),
-                    "executable_checks": len(executable_results),
+                    "execution_checks": len(execution_checks),
+                    "execution_passed": execution_summary["passed_checks"],
+                    "execution_failed": execution_summary["failed_checks"],
+                    "execution_failures": execution_summary["failures"],
                 }
             },
         )
         return result
 
-    def generate_code_evaluation(
-        self,
-        project_name: str,
-        opl_id: str,
-        code: str,
-        metrics: list[dict[str, Any]] | dict[str, Any],
-        tool_context: ToolContext,
-    ) -> dict[str, Any]:
+    def generate_code_evaluation(self, tool_context: ToolContext) -> dict[str, Any]:
         """
-        Produce code-level evaluation results
+        Produce code-level evaluation results.
+
+        Reads ``generated_code_zip``, ``code_coverage_graph``, ``opl_id``,
+        ``project_name``, and ``evaluation_metrics`` from session state.
+        Do not pass zip text or other arguments.
 
         Parameters:
-            - project_name : The project name
-            - opl_id : The OPL ID
-            - code : The generated code
-            - metrics : The evaluation metrics
-            - tool_context : Session state (reads code_coverage_graph)
+            - tool_context : Session state
 
         Returns:
             - dict[str, Any] : The evaluation results
         """
+        project_name = (tool_context.state.get("project_name") or "OPL Project").strip()
+        opl_id = (tool_context.state.get("opl_id") or "").strip()
+        metrics = tool_context.state.get("evaluation_metrics") or self._default_evaluation_metrics()
+
         start_message("CriticTools", "Generate code evaluation for " + project_name)
+
+        if not opl_id:
+            error_message("CriticTools", "No opl_id in session")
+            return {"status": "error", "message": "No opl_id in session"}
 
         graph_metric: dict[str, Any] | None = None
         syntax_metric: dict[str, Any] | None = None
@@ -1072,9 +1101,25 @@ class CriticTools:
         syntax_weight = float(syntax_metric.get("weight") or 0.0)
         total_weight = graph_weight + syntax_weight or 1.0
 
-        code_coverage_graph = tool_context.state.get("code_coverage_graph")
+        code_zip_b64 = get_project_zip_from_state(tool_context.state)
+        if not code_zip_b64:
+            error_message(
+                "CriticTools",
+                "No generated_code_zip in session for syntax/executable scoring",
+            )
+            return {
+                "status": "error",
+                "message": "No generated code zip in session. Run generate_code first.",
+            }
+
+        raw_graph = tool_context.state.get("code_coverage_graph")
+        code_coverage_graph = (
+            canonicalize_coverage_graph(raw_graph)
+            if isinstance(raw_graph, dict)
+            else None
+        )
         coverage_scores = self._graph_coverage_score(opl_id, code_coverage_graph, tool_context)
-        syntax_scores = self._syntax_and_executable_score(code)
+        syntax_scores = self._syntax_and_executable_score(code_zip_b64)
 
         graph_coverage_score = coverage_scores["overall_score"]
         syntax_and_executable_score = syntax_scores["overall_score"]
