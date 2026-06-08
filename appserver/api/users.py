@@ -43,19 +43,14 @@ def _users_collection() -> dict:
         Get the users collection
 
         returns:
-            - conn: The connection to the users collection
+            - conn: The connection to the user collection
     """
-    conn = current_app.extensions.get("users_collection")
+    conn = current_app.extensions.get("user_collection")
 
     # Check if the database is configured
     if conn is None:
-        error_message('usersAPI', "Database not configured")
-
-        # Set the error message
-        ERROR_LOGIN_MSG['database'] = True
-        ERROR_LOGIN_MSG['message'] = "Database not configured"
-
-        return jsonify(ERROR_LOGIN_MSG), 503   
+        error_message('usersAPI', "User collection not configured")
+        return None  
 
     return conn
 
@@ -86,6 +81,11 @@ def _find_user(email: str) -> dict:
     """
     coll = _users_collection()
     
+    # Check if the collection is configured
+    if coll is None:
+        error_message('usersAPI', "User collection not configured")
+        return None
+
     try:
         # Find the user by email
         user = coll.find_one({"email": email})

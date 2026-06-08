@@ -41,7 +41,7 @@ def init_mongo(app) -> None:
 
         # Set the 
         db = client[db_name]
-        app.extensions["users_collection"] = db[user_coll_name]
+        app.extensions["user_collection"] = db[user_coll_name]
         app.extensions["opl_collection"] = db[opl_coll_name]
         app.extensions["opl_logic_map_collection"] = db[opl_logic_map_coll_name]
 
@@ -49,7 +49,7 @@ def init_mongo(app) -> None:
         return
     except Exception as e:
         error_message('mongoDB', f"Error initializing MongoDB: {e}")
-        app.extensions["users_collection"] = None
+        app.extensions["user_collection"] = None
         app.extensions["opl_collection"] = None
         app.extensions["opl_logic_map_collection"] = None
 

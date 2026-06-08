@@ -2,6 +2,7 @@ from flask import Flask, jsonify
 from flask_cors import CORS
 from api.users import userAPI
 from api.agent_api import agentAPI
+from api.files import filesAPI
 from config import Config
 from extensions import init_mongo
 from messages import start_message, success_message, error_message, info_message
@@ -43,7 +44,7 @@ def index():
     success_message('main', "Index route loaded successfully")
     return jsonify(answer), 200
 
-if __name__ == "__main__":
+if __name__ == "__main__":    
     # Configure the app
     CONFIG = Config()
     app.config["MONGODB_URI"] = CONFIG["database"]["uri"]
@@ -51,6 +52,7 @@ if __name__ == "__main__":
     # Register the blueprints
     app.register_blueprint(userAPI)
     app.register_blueprint(agentAPI)
+    app.register_blueprint(filesAPI)
 
     # Get the port
     port = int(CONFIG["server"]["port"])
@@ -69,6 +71,9 @@ if __name__ == "__main__":
     else:
         success_message("server", f"Running on port {port}")
     
+    # Initialize the MongoDB extension
+    init_mongo(app)
+
     # Run the app
     app.run(
         host="0.0.0.0",

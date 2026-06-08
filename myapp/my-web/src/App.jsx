@@ -2,6 +2,7 @@ import { BrowserRouter as Router, Routes, Route, Navigate } from "react-router-d
 
 import Login from "./components/login/login";
 import Homepage from "./components/homepage/Homepage";
+import Generate from "./components/homepage/Generate";
 
 function App() {
   return (
@@ -19,6 +20,8 @@ function App() {
           path="/profile"
           element={<Homepage defaultView="profile" />}
         />
+
+        <Route path="/generate" element={<Generate />} />
       </Routes>
     </Router>
   );

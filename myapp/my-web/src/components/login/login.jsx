@@ -17,7 +17,11 @@ const AuthForm = () => {
     e.preventDefault();
     try {
       const response = await registerUser(fullName, email, password);
-      localStorage.setItem('user', JSON.stringify({ name: fullName, email: email }));
+      localStorage.setItem('user', JSON.stringify({
+        name: fullName,
+        email: email,
+        id: response.data?._id,
+      }));
       setMessage(response.message || "Registration successful!");
       setTimeout(() => navigate('/newproject'), 1000);
     } catch (error) {
@@ -29,7 +33,11 @@ const AuthForm = () => {
     e.preventDefault();
     try {
       const response = await loginUser(email, password);
-      localStorage.setItem('user', JSON.stringify({ name: response.name || email.split('@')[0], email: email }));
+      localStorage.setItem('user', JSON.stringify({
+        name: response.data?.name || email.split('@')[0],
+        email: email,
+        id: response.data?._id,
+      }));
       setMessage(response.message || "Login successful!");
       setTimeout(() => navigate('/newproject'), 1000);
     } catch (error) {
