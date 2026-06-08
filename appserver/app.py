@@ -1,25 +1,28 @@
 from flask import Flask, jsonify
 from flask_cors import CORS
 from api.users import userAPI
+from api.agent_api import agentAPI
 from config import Config
 from extensions import init_mongo
-from messages import start_message, success_message
+from messages import start_message, success_message, error_message, info_message
+import socket
 
 """
     App server for the application
+
+    Includes:
+        - app: The Flask app instance
+        - index: The index route
+        - __main__: The main function
 """
 
 # Initialize the Flask app
 app = Flask(__name__)
 CORS(app)
 
-# Configure the app
-CONFIG = Config()
-app.config["MONGODB_URI"] = CONFIG["database"]["uri"]
-
 @app.route("/")
 def index():
-    start_message('main')
+    start_message('main', "Index route")
 
     answer = {
         "service": "appserver",
@@ -37,21 +40,38 @@ def index():
         }
     }
 
-    success_message('main', "Index page loaded successfully")
+    success_message('main', "Index route loaded successfully")
     return jsonify(answer), 200
 
-
-# Register the blueprints
-app.register_blueprint(userAPI)
-
-
 if __name__ == "__main__":
-    # Initialize the MongoDB extension
-    init_mongo(app)
+    # Configure the app
+    CONFIG = Config()
+    app.config["MONGODB_URI"] = CONFIG["database"]["uri"]
 
+    # Register the blueprints
+    app.register_blueprint(userAPI)
+    app.register_blueprint(agentAPI)
+
+    # Get the port
+    port = int(CONFIG["server"]["port"])
+    is_port_available = False
+    while not is_port_available or port > 65535:
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as probe:
+            if probe.connect_ex(("127.0.0.1", port)) == 0:
+                info_message("server", f"Port {port} is already in use. Changing to port {port + 1}")
+                port += 1
+            else:
+                is_port_available = True
+
+    if port > 65535:
+        error_message("server", "No port available")
+        exit(1)
+    else:
+        success_message("server", f"Running on port {port}")
+    
     # Run the app
     app.run(
-        host="0.0.0.0", 
-        port=CONFIG["server"]["port"], 
-        debug=CONFIG["server"]["debug"]
+        host="0.0.0.0",
+        port=port,
+        debug=CONFIG["server"]["debug"],
     )
