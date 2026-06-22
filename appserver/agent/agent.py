@@ -16,7 +16,7 @@ from .roles import supervisor_role
 from .tools import AgentTools
 from config import CONFIG
 
-def _build_agent(db: DBconnection | None = None, max_itr: int = 10, opl_id: str = None) -> Agent:
+def _build_agent(db: DBconnection | None = None, max_itr: int = 10, opl_id: str = None, is_training: bool = False) -> Agent:
     """
         Build the singular ADK agent with all tools and unified role instructions
 
@@ -24,6 +24,7 @@ def _build_agent(db: DBconnection | None = None, max_itr: int = 10, opl_id: str 
             - db: MongoDB access layer; created from config if omitted
             - max_itr: Supervisor iteration cap
             - opl_id: OPL ID for this run
+            - is_training: Whether to run in training mode
 
         returns:
             - Agent : The ADK agent
@@ -43,11 +44,12 @@ def _build_agent(db: DBconnection | None = None, max_itr: int = 10, opl_id: str 
         instruction=supervisor_role(
             max_itr=max_itr,
             opl_id=opl_id,
+            is_training=is_training,
         ),
         tools=tools.adk_tools(),
     )
 
-def create_runner(db: DBconnection | None = None, max_itr: int = 10, opl_id: str = None) -> Runner:
+def create_runner(db: DBconnection | None = None, max_itr: int = 10, opl_id: str = None, is_training: bool = False) -> Runner:
     """
         Create an ADK Runner with in-memory sessions
 
@@ -55,12 +57,13 @@ def create_runner(db: DBconnection | None = None, max_itr: int = 10, opl_id: str
             - db: MongoDB access layer; created from config if omitted
             - max_itr: Supervisor maximum iterations count
             - opl_id: OPL ID for this run
-
+            - is_training: Whether to run in training mode
+            
         returns:
             - Runner : The ADK runner
     """
     # Create a new ADK agent with the agent builder
-    agent = _build_agent(db=db, max_itr=max_itr, opl_id=opl_id)
+    agent = _build_agent(db=db, max_itr=max_itr, opl_id=opl_id, is_training=is_training)
 
     # Create a new in-memory session service
     session_service = InMemorySessionService()

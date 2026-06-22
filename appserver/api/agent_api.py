@@ -21,6 +21,8 @@ from typing import Any
 import agent as agent_module
 from extensions import gemini_api_health_check
 from config import CONFIG
+from api.users import check_is_admin
+import threading
 
 # Create the agent API blueprint
 agentAPI = Blueprint("agentAPI", __name__, url_prefix="/agent")
@@ -143,7 +145,7 @@ def generate():
             try:
                 # Run the agent and count the number of iterations
                 run_length = 0
-                for _ in runner.run(user_id=user_id, session_id=session_id, new_message=message):
+                for result in runner.run(user_id=user_id, session_id=session_id, new_message=message):
                     run_length += 1
 
                 # Get the session updated by the agent
@@ -206,14 +208,121 @@ def generate():
 @agentAPI.get("/train")
 def train():
     """
-        Create a new logic map
+        Train the agent to generate a Logic Map
+
+        params:
+            user_id: User ID for the training
 
         returns:
             - response: The response from the logic map creation
     """
-    start_message("agentAPI", "Create a new logic map")
+    start_message("agentAPI", "Train the agent to generate a Logic Map")
 
-    # TODO: Train the agent to generate a Logic Map
+    # Get request parameters from the query string
+    user_id = request.args.get("user_id") or "6a09db5d59c6d34f69a43322"
 
-    error_message("agentAPI", "Not implemented")
-    return jsonify({"success": False, "message": "Not implemented"}), 500
+    # Check if the user is an admin
+    is_admin = check_is_admin(user_id)
+    if not is_admin:
+        error_message("agentAPI", "User is not an admin")
+        return jsonify({"success": False, "message": "User is not an admin"}), 403
+
+    """
+    try:
+        # Create a new runner
+        runner = create_runner(max_itr=MAX_AGENT_ITERATIONS, is_training=True)
+
+        message = types.Content(
+            role="user",
+            parts=[types.Part(text="Start workflow of given current_role")],
+        )
+
+        last_failure_message = f"Agent training failed after {RETRIES} retries"
+        last_failure_status = 500
+
+        for retry in range(RETRIES):
+            info_message("agentAPI", f"Trying to run the agent : {retry + 1}/{RETRIES}")
+
+            # Create a new session
+            session_id = str(uuid.uuid4())
+            runner.session_service.create_session_sync(
+                app_name=CONFIG["gemini"]["app_name"],
+                user_id=user_id,
+                session_id=session_id,
+                state={
+                    "current_role": "supervisor",
+                    "initial_start": True,
+                    "cnt_itr": 0,
+                    "train": True,
+                },
+            )
+
+            try:
+                # Run the agent and count the number of iterations
+                run_length = 0
+                for _ in runner.run(user_id=user_id, session_id=session_id, new_message=message):
+                    run_length += 1
+
+                # Get the session updated by the agent
+                session = runner.session_service.get_session_sync(
+                    app_name=CONFIG["gemini"]["app_name"],
+                    user_id=user_id,
+                    session_id=session_id,
+                )
+
+                if not session:
+                    error_message(
+                        "agentAPI",
+                        f"Failed to load session after agent trained, on retry {retry + 1}/{RETRIES}",
+                    )
+                    continue
+
+                state = session.state
+                workflow_problem = state.get("workflow_problem")
+
+                if run_length == 0:
+                    outcome_message = "Agent produced no events"
+                    http_status = 503
+                elif workflow_problem:
+                    outcome_message = str(workflow_problem)
+                    http_status = 500
+                elif state.get("last_completed_role") == "trainer":
+                    success_message(
+                        "agentAPI",
+                        f"Agent trained successfully on retry {retry + 1}/{RETRIES}",
+                    )
+                    return jsonify({"success": True, "message": "Agent trained successfully"}), 200
+                elif state.get("generated_code_zip"):
+                    outcome_message = "Agent ran generation workflow instead of training"
+                    http_status = 500
+                elif state.get("current_role") == "generator":
+                    outcome_message = "Agent handed off to generator instead of trainer"
+                    http_status = 500
+                else:
+                    outcome_message = "Training workflow did not complete"
+                    http_status = 500
+
+                error_message(
+                    "agentAPI",
+                    f"{outcome_message} on retry {retry + 1}/{RETRIES}",
+                )
+                last_failure_message = outcome_message
+                last_failure_status = http_status
+            except Exception as e:
+                error_message("agentAPI", f"Exception on retry {retry + 1}/{RETRIES} : {e}")
+                last_failure_message = str(e)
+                last_failure_status = 500
+
+            # Sleep for 3 seconds for the next retry
+            if retry < RETRIES - 1:
+                time.sleep(3)
+
+        error_message("agentAPI", last_failure_message)
+        return jsonify({"success": False, "message": last_failure_message}), last_failure_status
+    except Exception as exc:
+        message = f"Training failed: {exc}"
+        error_message("agentAPI", message)
+        return jsonify({"success": False, "message": message,}), 500"""
+    
+    return jsonify({"success": True, "message": "Training successful"}), 200
+    

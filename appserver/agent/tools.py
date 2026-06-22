@@ -1,5 +1,5 @@
 """
-    ADK tool groups: Supervisor, Generator, Critic.
+    ADK tool groups: Supervisor, Trainer, Generator, Critic.
 """
 from __future__ import annotations
 import ast
@@ -16,7 +16,7 @@ from .opl_examples import demo1, demo3
 from agent.examples.logic_map_example import logic_map_example
 from agent.examples.eval_metrics_example import metrics_example
 from agent.examples.eval_example import evaluation_example
-from messages import start_message, error_message, success_message
+from messages import start_message, error_message, success_message, info_message
 from extensions import call_gemini
 from .agent_tools.create_folder_dir import (
     frontend_skeleton,
@@ -34,9 +34,11 @@ from .agent_tools.execution_readiness import (
     run_execution_readiness_checks,
     execution_readiness_score,
 )
-##############################################################################################################################################################
-##############################################################################################################################################################
-##############################################################################################################################################################
+from config import CONFIG
+from agent.train import files as training_files
+
+# Get the agent debug type
+AGENT_DEBUG = CONFIG["server"]["agent_debug"]
 
 def _project_zip_dir_names(entry_paths: list[str]) -> list[str]:
     dirs: set[str] = set()
@@ -507,6 +509,10 @@ class SupervisorTools:
         """
         start_message("SupervisorTools", f"Get OPL by id {opl_id}")
 
+        if AGENT_DEBUG != 1 and AGENT_DEBUG != 4:
+            success_message("SupervisorTools", "Returning demo OPL")
+            return demo1
+
         if opl_id:
             response = self._db.get_opl(opl_id)
 
@@ -532,6 +538,31 @@ class SupervisorTools:
             ``cnt_itr`` to 0, ``initial_start`` to False, and ``current_role`` to ``generator``.
         """
         start_message("SupervisorTools", "supervisor_first_step")
+
+        if tool_context.state.get("train"):
+            tool_context.state["cnt_itr"] = 0
+            tool_context.state["initial_start"] = False
+            tool_context.state["current_role"] = "trainer"
+            success_message(
+                "SupervisorTools",
+                {
+                    "initial_start": False,
+                    "cnt_itr": 0,
+                    "current_role": "trainer",
+                    "train": True,
+                },
+            )
+
+            return {
+                "status": "success",
+                "message": (
+                    "Training mode: current_role is trainer. "
+                    "Continue with the full Trainer workflow through save_opl_logic_map."
+                ),
+                "initial_start": False,
+                "cnt_itr": 0,
+                "current_role": "trainer",
+            }
 
         if not opl or not str(opl).strip():
             error_message("SupervisorTools", "supervisor_first_step: missing opl")
@@ -559,6 +590,7 @@ class SupervisorTools:
                 "current_role": "generator",
             },
         )
+
         return {
             "status": "success",
             "message": (
@@ -571,22 +603,250 @@ class SupervisorTools:
             "current_role": "generator",
         }
 
-    def generate_problem(self, message: str, tool_context: ToolContext) -> dict[str, Any]:
+    # Session keys that ``change_session`` is allowed to overwrite. Control-flow
+    # keys (current_role, cnt_itr, initial_start, train, max_itr, ...) are excluded
+    # on purpose so a resolution can never corrupt the orchestration loop.
+    _CHANGEABLE_SESSION_KEYS = (
+        "opl",
+        "opl_logic_map",
+        "project_name",
+        "project_slug",
+        "code_coverage_graph",
+        "evaluation_metrics",
+        "code_evaluation",
+    )
+
+    def _build_problem_context(self, message: str, state: Any) -> dict[str, Any]:
         """
-            Record a workflow problem in session state
+            Build a compact, JSON-serializable snapshot of session state for Gemini.
 
             Parameters:
                 - message : The problem message
+                - state : The session state
 
             Returns:
-                - dict[str, Any] : The result
+                - dict[str, Any] : The problem context
+        """
+        opl = state.get("opl") or ""
+        return {
+            "problem": message,
+            "opl": opl[:4000],
+            "opl_logic_map": state.get("opl_logic_map"),
+            "code_evaluation": state.get("code_evaluation"),
+            "last_completed_role": state.get("last_completed_role"),
+            "current_role": state.get("current_role"),
+            "project_name": state.get("project_name"),
+            "has_generated_code": bool(state.get("generated_code_zip")),
+            "iteration": state.get("cnt_itr"),
+            "max_iteration": state.get("max_itr"),
+            "changeable_session_keys": list(self._CHANGEABLE_SESSION_KEYS),
+        }
+
+    def _problem_resolution_prompt(self, context: dict[str, Any]) -> str:
+        """
+            Build the Gemini prompt that decides how to resolve a workflow problem.
+
+            Parameters:
+                - context : The problem context from ``_build_problem_context``
+
+            Returns:
+                - str : The resolution prompt
+        """
+        return (
+            "You are the Supervisor's problem-resolution brain for an OPL-to-code "
+            "generation workflow. A workflow problem was reported. Decide the single "
+            "best action to recover, and return the data needed to apply it.\n\n"
+            "Choose exactly one `action`:\n"
+            "- \"change_opl_logic\": The OPL logic map is wrong/incomplete. First build "
+            "your own understanding of the problem from the `problem`, the `opl` "
+            "specification, and the `code_evaluation` feedback: identify which "
+            "objects, processes, or relations the current `opl_logic_map` is missing, "
+            "mislabeling, or mapping to the wrong OPM type. Then return an improved "
+            "`opl_logic_map` object with `objects`, `processes`, and `relations` keys "
+            "that resolves those gaps. Keep the same schema and shape as the current "
+            "map (each key holds the type definitions/descriptions used to classify OPL "
+            "relations), preserve every correct entry, and only add, remove, or refine "
+            "entries that your analysis shows are needed to fix the reported problem.\n"
+            "- \"handoff\": A role should re-run its workflow. Set `next_role` to "
+            "\"generator\" (rebuild the code) or \"critic\" (re-evaluate the code).\n"
+            "- \"change_session\": A specific session memory value is wrong. Set "
+            "`session_key` (one of changeable_session_keys) and `session_value` to a "
+            "corrected value generated by you.\n"
+            "- \"cant_solve\": The problem cannot be recovered automatically. Set "
+            "`user_error` to a clear, user-facing explanation.\n\n"
+            "Return ONLY a JSON object with this schema (omit keys not relevant to the "
+            "chosen action):\n"
+            "{\n"
+            '  "action": "change_opl_logic | handoff | change_session | cant_solve",\n'
+            '  "reason": "short explanation of the decision",\n'
+            '  "next_role": "generator | critic | null",\n'
+            '  "opl_logic_map": { "objects": ..., "processes": ..., "relations": ... },\n'
+            '  "session_key": "one of changeable_session_keys",\n'
+            '  "session_value": "corrected value for that key",\n'
+            '  "user_error": "user-facing error message"\n'
+            "}\n\n"
+            "Workflow context:\n"
+            f"{json.dumps(context, indent=2, default=str)}"
+        )
+
+    def _resolve_problem_with_gemini(self, message: str, state: Any) -> dict[str, Any]:
+        """
+            Ask Gemini how to resolve a workflow problem.
+
+            Parameters:
+                - message : The problem message
+                - state : The session state
+
+            Returns:
+                - dict[str, Any] : The parsed resolution, or a ``cant_solve`` fallback
+        """
+        context = self._build_problem_context(message, state)
+        prompt = self._problem_resolution_prompt(context)
+
+        result = call_gemini(prompt)
+        if result.get("status") != "success":
+            error_message("SupervisorTools", result.get("message", "Gemini resolution failed"))
+            return {
+                "action": "cant_solve",
+                "reason": "Gemini could not produce a resolution",
+                "user_error": message,
+            }
+
+        try:
+            resolution = json.loads(_strip_code_fences(result.get("data", "")))
+        except json.JSONDecodeError as exc:
+            error_message("SupervisorTools", f"Invalid resolution JSON from Gemini: {exc}")
+            return {
+                "action": "cant_solve",
+                "reason": f"Invalid resolution JSON: {exc}",
+                "user_error": message,
+            }
+
+        if not isinstance(resolution, dict):
+            return {
+                "action": "cant_solve",
+                "reason": "Gemini resolution was not a JSON object",
+                "user_error": message,
+            }
+        return resolution
+
+    def generate_problem(self, message: str, tool_context: ToolContext) -> dict[str, Any]:
+        """
+            Resolve a workflow problem with Gemini, apply the fix, hand back to Supervisor.
+
+            Records the problem, asks Gemini for the best recovery action, applies it,
+            and (except for ``cant_solve``) sets ``current_role`` back to ``supervisor``.
+            The returned dict tells the Supervisor what happened and which role to run next.
+
+            Parameters:
+                - message : The problem message
+                - tool_context : The tool context
+
+            Returns:
+                - dict[str, Any] : The resolution result
         """
         start_message("SupervisorTools", "Generate problem")
 
-        tool_context.state["workflow_problem"] = message
+        state = tool_context.state
+        state["workflow_problem"] = message
 
-        success_message("SupervisorTools", {"message": message})
-        return {"status": "success", "message": message}
+        resolution = self._resolve_problem_with_gemini(message, state)
+        action = str(resolution.get("action") or "cant_solve").strip()
+        reason = str(resolution.get("reason") or "")
+
+        result: dict[str, Any] = {
+            "status": "success",
+            "action": action,
+            "problem": message,
+            "reason": reason,
+        }
+
+        # The Critic's failing evaluation is stale the moment we apply a fix and hand a
+        # role back for a redo. Clear it so the Supervisor's problem check stops re-reading
+        # the old low score and instead routes through the Critic again to re-evaluate the
+        # regenerated code. (State has no delete, so None is the cleared value.)
+        if action != "cant_solve":
+            state["code_evaluation"] = None
+
+        if action == "change_opl_logic":
+            opl_logic_map = resolution.get("opl_logic_map")
+            if not isinstance(opl_logic_map, dict) or not opl_logic_map:
+                error_message("SupervisorTools", "change_opl_logic missing a valid opl_logic_map")
+                action = "cant_solve"
+                resolution["user_error"] = "Could not improve the OPL logic map"
+            else:
+                state["opl_logic_map"] = opl_logic_map
+
+                # Persist the improved logic map so the Generator/Critic read it from the DB.
+                save_response = self._db.save_opl_logic_map(opl_logic_map)
+                if save_response.get("status") == "success":
+                    success_message("SupervisorTools", save_response.get("message"))
+                else:
+                    error_message("SupervisorTools", save_response.get("message", "Failed to save OPL logic map"))
+                result["saved"] = save_response.get("status") == "success"
+
+                next_role = str(resolution.get("next_role") or "generator").strip().lower()
+                if next_role not in {"generator", "critic"}:
+                    next_role = "generator"
+                state["next_role"] = next_role
+                state["current_role"] = "supervisor"
+                result["next_role"] = next_role
+                result["message"] = (
+                    "Improved OPL logic map saved to session and database. "
+                    f"Hand off to {next_role} to redo the workflow."
+                )
+                success_message("SupervisorTools", {"action": action, "next_role": next_role})
+                return result
+
+        if action == "handoff":
+            next_role = str(resolution.get("next_role") or "").strip().lower()
+            if next_role not in {"generator", "critic"}:
+                error_message("SupervisorTools", f"handoff has invalid next_role: {next_role!r}")
+                action = "cant_solve"
+                resolution["user_error"] = "No valid role to hand off to"
+            else:
+                state["next_role"] = next_role
+                state["current_role"] = "supervisor"
+                result["next_role"] = next_role
+                result["message"] = f"Hand off to {next_role} to redo the workflow."
+                success_message("SupervisorTools", {"action": action, "next_role": next_role})
+                return result
+
+        if action == "change_session":
+            session_key = str(resolution.get("session_key") or "").strip()
+            if session_key not in self._CHANGEABLE_SESSION_KEYS:
+                error_message("SupervisorTools", f"change_session has invalid key: {session_key!r}")
+                action = "cant_solve"
+                resolution["user_error"] = "No valid session key to change"
+            elif "session_value" not in resolution:
+                error_message("SupervisorTools", "change_session missing session_value")
+                action = "cant_solve"
+                resolution["user_error"] = "No replacement value for session key"
+            else:
+                state[session_key] = resolution.get("session_value")
+                next_role = str(resolution.get("next_role") or "generator").strip().lower()
+                if next_role not in {"generator", "critic"}:
+                    next_role = "generator"
+                state["next_role"] = next_role
+                state["current_role"] = "supervisor"
+                result["next_role"] = next_role
+                result["session_key"] = session_key
+                result["message"] = (
+                    f"Updated session memory '{session_key}'. "
+                    f"Hand off to {next_role} to redo the workflow."
+                )
+                success_message("SupervisorTools", {"action": action, "session_key": session_key})
+                return result
+
+        # cant_solve (either chosen by Gemini or fallen back to from a failed action)
+        user_error = str(resolution.get("user_error") or message)
+        state["workflow_problem"] = user_error
+        state["current_role"] = "supervisor"
+        result["status"] = "error"
+        result["action"] = "cant_solve"
+        result["message"] = user_error
+        error_message("SupervisorTools", {"action": "cant_solve", "message": user_error})
+        return result
 
     def finish_and_return_user(self, tool_context: ToolContext) -> dict[str, Any]:
         """
@@ -632,6 +892,7 @@ class SupervisorTools:
         result["download_filename"] = f"{project_slug}.zip"
 
         success_message("SupervisorTools", {"status": result["status"], "message": result["message"]})
+
         return result
 
     def adk_tools(self) -> list[Callable[..., Any]]:
@@ -668,6 +929,10 @@ class GeneratorTools:
                 - dict[str, Any] : The OPL logic map
         """
         start_message("GeneratorTools", "Get OPL logic map")
+
+        if AGENT_DEBUG != 2 and AGENT_DEBUG != 4:
+            success_message("GeneratorTools", "Returning demo OPL logic map")
+            return logic_map_example
 
         # Get the latest OPL logic map from the database
         response = self._db.get_latest_opl_logic_map()
@@ -714,7 +979,14 @@ class GeneratorTools:
         Returns:
             - dict[str, Any] : The result
         """
-        display, slug = _resolve_project_name(project_name, tool_context)
+        # Keep the project name stable across re-generations. Once a name was chosen
+        # for this run (e.g. on the first Generator pass), a redo after a problem must
+        # reuse it exactly instead of renaming it (e.g. appending "_v2").
+        existing_name = (tool_context.state.get("project_name") or "").strip()
+        if existing_name:
+            display, slug = _resolve_project_name(existing_name)
+        else:
+            display, slug = _resolve_project_name(project_name, tool_context)
         start_message("GeneratorTools", "Generate project code for " + display)
 
         # Set the project name and slug in the tool context
@@ -759,6 +1031,10 @@ class GeneratorTools:
             Reads ``generated_code_zip`` and ``opl_id`` from session; do not pass zip text as arguments.
         """
         start_message("GeneratorTools", "Save generated code to the database")
+
+        if AGENT_DEBUG != 3 and AGENT_DEBUG != 4:
+            success_message("GeneratorTools", "Debug mode is enabled, skipping save generated code")
+            return {"status": "success", "message": "Zip saved to database"}
 
         zip_b64 = tool_context.state.get("generated_code_zip")
         if not zip_b64:
@@ -961,6 +1237,11 @@ class CriticTools:
                 - dict[str, Any] : The evaluation metrics
         """
         start_message("CriticTools", "Get evaluation metrics")
+
+        if AGENT_DEBUG != 3 and AGENT_DEBUG != 4:
+            success_message("CriticTools", "Returning demo evaluation metrics")
+            return metrics_example
+
         eval_metrics = self._default_evaluation_metrics()
         success_message("CriticTools", {"eval_metrics": eval_metrics})
         return eval_metrics
@@ -1067,6 +1348,10 @@ class CriticTools:
 
         start_message("CriticTools", "Generate code evaluation for " + project_name)
 
+        if AGENT_DEBUG != 3 and AGENT_DEBUG != 4:
+            success_message("CriticTools", "Returning demo code evaluation")
+            return evaluation_example
+
         if not opl_id:
             error_message("CriticTools", "No opl_id in session")
             return {"status": "error", "message": "No opl_id in session"}
@@ -1167,18 +1452,118 @@ class CriticTools:
         ]
 
 
+class TrainerTools:
+    """
+        Trainer Tools
+
+        Includes:
+            - get_training_files : Load training files for OPL logic map generation.
+            - generate_opl_logic_map : Build the OPL logic map from training files.
+            - save_opl_logic_map : Persist the OPL logic map to the database.
+    """
+
+    def __init__(self, db: DBconnection):
+        self._db = db
+
+    def _training_prompt(self, training_files: list[str]) -> str:
+        """
+        Generate the training prompt for the OPL logic map generation.
+
+        Parameters:
+            - training_files : The training files
+
+        Returns:
+            - str : The training prompt
+        """
+
+        file_prompt = ""
+        for file,index in enumerate(training_files):
+            file_prompt += f"File {index + 1}:\n{file}\n"
+
+        return f"""
+        You are the Trainer Agent. Your job is to generate the OPL logic map from the training files.
+
+        The training files are:
+        {file_prompt}
+
+        Generate the OPL logic map from the training files.
+
+        OPL logic map schema:
+        
+        """
+
+    def get_training_files(self) -> dict[str, Any]:
+        """
+            Load training files for OPL logic map generation.
+
+            Returns:
+                - dict[str, Any] : The training files
+        """
+        start_message("TrainerTools", "Get training files")
+
+        training = []
+        count = 0
+        for file in training_files:
+            file_content = open(file, "r", encoding="utf-8").read()
+
+            if not file_content:
+                info_message("TrainerTools", f"Training file {file} is empty")
+                continue
+
+            training.append(file_content)
+            count += len(file_content)
+            info_message("TrainerTools", f"Training file {file} loaded")
+
+        success_message("TrainerTools", f"Loaded {len(training)} training files with {count} characters")
+        return {"status": "success", "training_files": training}
+
+    def generate_opl_logic_map(self, training_files: list[str]) -> dict[str, Any]:
+        """
+            Build the OPL logic map from training files.
+
+            Parameters:
+                - training_files : The training files
+
+            Returns:
+                - dict[str, Any] : The generated OPL logic map
+        """
+        start_message("TrainerTools", "Generate OPL logic map")
+
+
+    def save_opl_logic_map(self, tool_context: ToolContext) -> dict[str, Any]:
+        """
+            Persist the OPL logic map to the database.
+
+            Parameters:
+                - tool_context : Session state
+
+            Returns:
+                - dict[str, Any] : The save result
+        """
+        start_message("TrainerTools", "Save OPL logic map")
+        return {"status": "stub", "message": "save_opl_logic_map is not implemented"}
+
+    def adk_tools(self) -> list[Callable[..., Any]]:
+        return [
+            self.get_training_files,
+            self.generate_opl_logic_map,
+            self.save_opl_logic_map,
+        ]
+
+
 class AgentTools:
     """All tools for the singular agent (unique names, no duplicates)."""
 
     def __init__(self, db: DBconnection | None = None):
         db = db or DBconnection.from_config()
         self._supervisor = SupervisorTools(db)
+        self._trainer = TrainerTools(db)
         self._generator = GeneratorTools(db)
         self._critic = CriticTools(db)
 
     def set_current_role(self, role: str, tool_context: ToolContext) -> dict[str, Any]:
-        """Switch active role: supervisor, generator, or critic."""
-        allowed = {"supervisor", "generator", "critic"}
+        """Switch active role: supervisor, trainer, generator, or critic."""
+        allowed = {"supervisor", "trainer", "generator", "critic"}
         if role not in allowed:
             return {
                 "status": "error",
@@ -1194,6 +1579,8 @@ class AgentTools:
             by_name[fn.__name__] = fn
 
         for fn in self._supervisor.adk_tools():
+            add(fn)
+        for fn in self._trainer.adk_tools():
             add(fn)
         for fn in self._generator.adk_tools():
             add(fn)

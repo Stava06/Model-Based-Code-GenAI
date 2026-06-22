@@ -134,6 +134,35 @@ class DBconnection:
 
         return {"status": "success", "data": {"opl_logic_map": combined_logic_map, "created_at": latest_opl_logic_map.get("created_at")}}
     
+    def save_opl_logic_map(self, opl_logic_map: dict[str, Any]) -> dict[str, Any]:
+        """
+        Save an OPL logic map to the database
+
+        Parameters:
+            - opl_logic_map : The OPL logic map (objects, processes, relations)
+
+        Returns:
+            - dict[str, Any] : The result
+        """
+        from datetime import datetime, timezone
+
+        opl_logic_map_col = self._opl_logic_map_collection()
+        if opl_logic_map_col is None:
+            return {"status": "error", "message": "OPL logic map collection not configured"}
+
+        if not isinstance(opl_logic_map, dict) or not opl_logic_map:
+            return {"status": "error", "message": "opl_logic_map must be a non-empty object"}
+
+        document = {
+            "objects": opl_logic_map.get("objects"),
+            "processes": opl_logic_map.get("processes"),
+            "relations": opl_logic_map.get("relations"),
+            "created_at": datetime.now(timezone.utc),
+        }
+
+        opl_logic_map_col.insert_one(document)
+        return {"status": "success", "message": "OPL logic map saved to database"}
+
     def save_code_zip(self, code_zip: bytes, opl_id: str) -> dict[str, Any]:
         """
         Save the code zip to the database

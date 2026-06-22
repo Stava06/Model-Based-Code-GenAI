@@ -15,6 +15,7 @@ from __future__ import annotations
 from typing import Any
 from flask import Blueprint, current_app, jsonify, request
 from messages import start_message, success_message, error_message
+from bson import ObjectId
 
 # Error message for login
 ERROR_LOGIN_MSG = {
@@ -69,12 +70,13 @@ def _serialize_user(user: dict) -> dict:
         user["_id"] = str(user["_id"])
     return user
 
-def _find_user(email: str) -> dict:
+def _find_user(email: str=None, user_id: str=None) -> dict:
     """
-        Find a user by email
+        Find a user by email or ID
 
         params:
             - email: The email of the user
+            - user_id: The ID of the user
 
         returns:
             - user: The user document
@@ -88,7 +90,7 @@ def _find_user(email: str) -> dict:
 
     try:
         # Find the user by email
-        user = coll.find_one({"email": email})
+        user = coll.find_one({"email": email}) if email else coll.find_one({"_id": ObjectId(user_id)})
 
         # Serialize the user and return it
         return _serialize_user(user) if user is not None else None
@@ -185,7 +187,7 @@ def login():
 
     try:
         # Find the user by email
-        user = _find_user(email)
+        user = _find_user(email=email)
 
         # Check if the user is not found
         if user is None:
@@ -263,7 +265,7 @@ def register():
         return jsonify(error_msg), 400    
 
     # Check if the user is already registered
-    check_user = _find_user(email)
+    check_user = _find_user(email=email)
     if check_user is not None:
         error_message("usersAPI", "Email already registered")
         error_msg["message"] = "Email already registered"
@@ -271,7 +273,7 @@ def register():
         return jsonify(error_msg), 400
 
     # Create the user
-    user = {"name": name, "email": email, "password": password,}
+    user = {"name": name, "email": email, "password": password, "is_admin": False}
 
     try:
         # Insert the user into the database
@@ -301,7 +303,7 @@ def get_user(email: str):
     start_message("usersAPI", "Get user route")
     
     # Find the user by email
-    user = _find_user(email)
+    user = _find_user(email=email)
 
     # Check if the user is found
     if user is not None:
@@ -313,3 +315,36 @@ def get_user(email: str):
     else:
         error_message("usersAPI", "User not found")
         return jsonify({ "success": False, "message": "User not found", "data": None }), 404
+
+def check_is_admin(user_id: str) -> bool:
+    """
+        Check if a user is an admin
+
+        params:
+            - user_id: The ID of the user
+
+        returns:
+            - is_admin: True if the user is an admin, False otherwise
+    """
+    start_message("usersAPI", "Check if a user is an admin")
+
+    if not user_id:
+        error_message("usersAPI", "User ID is required")
+        return False
+
+    try:
+        # Get the user by ID
+        user = _find_user(user_id=user_id)
+
+        # Check if the user is found
+        if user is None:
+            error_message("usersAPI", "User not found")
+            return False
+
+        is_admin = user["is_admin"] or False
+
+        success_message("usersAPI", f"User with ID {user_id} is {'not ' if not is_admin else ''}an admin")
+        return is_admin
+    except Exception as e:
+        error_message("usersAPI", f"Error checking if user is an admin: {e}")
+        return False
