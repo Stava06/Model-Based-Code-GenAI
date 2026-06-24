@@ -56,6 +56,11 @@ class Config:
             "gemini": {
                 "api_key": os.getenv("GEMINI_API_KEY"),
                 "model": os.getenv("GEMINI_MODEL") or "gemini-3.1-flash-lite",
+                "all_models": [
+                    "gemini-3.5-flash",
+                    "gemini-3.1-flash-lite",
+                    "gemini-2.5-pro",
+                ],
                 "app_name": os.getenv("GEMINI_APP_NAME") or "model_based_codegen",
             },
         }

@@ -11,8 +11,6 @@ from pymongo import MongoClient
 from pymongo.database import Database
 
 from config import CONFIG
-from flask import current_app
-from messages import error_message
 
 class DBconnection:
     """MongoDB repository used by Code Generator, Evaluator, and Optimizer tools."""

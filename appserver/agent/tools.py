@@ -6,6 +6,7 @@ import ast
 import base64
 import io
 import json
+import os
 import re
 import zipfile
 from collections.abc import Callable
@@ -35,10 +36,12 @@ from .agent_tools.execution_readiness import (
     execution_readiness_score,
 )
 from config import CONFIG
-from agent.train import files as training_files
 
 # Get the agent debug type
 AGENT_DEBUG = CONFIG["server"]["agent_debug"]
+
+# Directory holding the raw training files used to build the OPL logic map.
+_TRAINING_FILES_DIR = os.path.join(os.path.dirname(__file__), "train", "files")
 
 def _project_zip_dir_names(entry_paths: list[str]) -> list[str]:
     dirs: set[str] = set()
@@ -497,81 +500,59 @@ class SupervisorTools:
     def __init__(self, db: DBconnection):
         self._db = db
 
-    def get_opl(self, opl_id: str) -> str:
+    def get_opl(self, opl_id: str, tool_context: ToolContext) -> dict[str, Any]:
         """
-            Resolve OPL
+            Resolve OPL by id and store it in session ``opl``.
 
             Parameters:
                 - opl_id : The ID of the OPL
+                - tool_context : The tool context
 
             Returns:
-                - str : OPL
+                - dict[str, Any] : ``{"status": "success", "data": opl}`` or an error dict
         """
         start_message("SupervisorTools", f"Get OPL by id {opl_id}")
 
         if AGENT_DEBUG != 1 and AGENT_DEBUG != 4:
             success_message("SupervisorTools", "Returning demo OPL")
-            return demo1
+            tool_context.state["opl"] = demo1
+            return {"status": "success", "data": demo1}
 
-        if opl_id:
-            response = self._db.get_opl(opl_id)
-
-            if response.get("status") == "success":
-                opl_retrieved = response.get("data")
-                success_message("SupervisorTools", {"opl length": len(opl_retrieved) if opl_retrieved else 0})
-
-                return opl_retrieved
-            else:
-                error_message("SupervisorTools", response.get("message"))
-                return None
-        else:
+        if not opl_id:
             #TODO: Get opl from Local Storage
-            return demo1
+            tool_context.state["opl"] = demo1
+            return {"status": "success", "data": demo1}
+
+        response = self._db.get_opl(opl_id)
+        if response.get("status") == "success":
+            opl_retrieved = response.get("data")
+            tool_context.state["opl"] = opl_retrieved
+            success_message("SupervisorTools", {"opl length": len(opl_retrieved) if opl_retrieved else 0})
+            return {"status": "success", "data": opl_retrieved}
+
+        error_message("SupervisorTools", response.get("message"))
+        return {"status": "error", "message": response.get("message")}
 
     def supervisor_first_step(
-        self, opl: str, tool_context: ToolContext, opl_id: str | None = None
+        self, tool_context: ToolContext, opl: str | None = None, opl_id: str | None = None
     ) -> dict[str, Any]:
         """
             Complete supervisor initial start and hand off to the generator.
 
-            Pass OPL text from ``get_opl``. Persists ``opl`` in session, sets
-            ``cnt_itr`` to 0, ``initial_start`` to False, and ``current_role`` to ``generator``.
+            Pass OPL text from ``get_opl`` (or rely on the ``opl`` already stored in
+            session by ``get_opl``). Persists ``opl`` in session, sets ``cnt_itr`` to 0,
+            ``initial_start`` to False, and ``current_role`` to ``generator``.
         """
         start_message("SupervisorTools", "supervisor_first_step")
 
-        if tool_context.state.get("train"):
-            tool_context.state["cnt_itr"] = 0
-            tool_context.state["initial_start"] = False
-            tool_context.state["current_role"] = "trainer"
-            success_message(
-                "SupervisorTools",
-                {
-                    "initial_start": False,
-                    "cnt_itr": 0,
-                    "current_role": "trainer",
-                    "train": True,
-                },
-            )
-
-            return {
-                "status": "success",
-                "message": (
-                    "Training mode: current_role is trainer. "
-                    "Continue with the full Trainer workflow through save_opl_logic_map."
-                ),
-                "initial_start": False,
-                "cnt_itr": 0,
-                "current_role": "trainer",
-            }
-
-        if not opl or not str(opl).strip():
+        opl_text = (opl or tool_context.state.get("opl") or "").strip()
+        if not opl_text:
             error_message("SupervisorTools", "supervisor_first_step: missing opl")
             return {
                 "status": "error",
-                "message": "opl is required (pass the string returned from get_opl)",
+                "message": "opl is required (call get_opl first, or pass the OPL text)",
             }
 
-        opl_text = str(opl)
         tool_context.state["opl"] = opl_text
         resolved_id = (opl_id or tool_context.state.get("opl_id") or "").strip()
         if resolved_id:
@@ -730,6 +711,39 @@ class SupervisorTools:
             }
         return resolution
 
+    def _generate_opl_logic_map_prompt(self, files: list[str]) -> str:
+        """
+        Generate the prompt for the OPL logic map generation.
+
+        Parameters:
+            - files : The training file contents
+
+        Returns:
+            - str : The prompt
+        """
+
+        file_prompt = ""
+        for index, file in enumerate(files):
+            file_prompt += f"File {index + 1}:\n{file}\n"
+
+        schema = (
+            "{\n"
+            '  "objects": "Object: <explanation>\\nState: <explanation>\\n...",\n'
+            '  "processes": "Process: <explanation>\\nTransformation: <explanation>\\n...",\n'
+            '  "relations": "Aggregation-Participation: <explanation>\\n..."\n'
+            "}"
+        )
+
+        return (
+            "You are the OPL logic map generator Agent. Generate the OPL logic map from "
+            "the files.\n\n"
+            f"The files are:\n{file_prompt}\n"
+            "Return ONLY a valid JSON object with exactly these three keys: objects, "
+            "processes, relations. Each value is a single newline-separated string of "
+            "'<Term>: <explanation>' lines.\n\n"
+            f"Schema:\n{schema}\n\n"
+        )
+
     def generate_problem(self, message: str, tool_context: ToolContext) -> dict[str, Any]:
         """
             Resolve a workflow problem with Gemini, apply the fix, hand back to Supervisor.
@@ -863,8 +877,8 @@ class SupervisorTools:
         problem = tool_context.state.get("workflow_problem", "")
         generated_code_zip = tool_context.state.get("generated_code_zip")
         result: dict[str, Any] = {"problem": problem or None}
-        project_name = tool_context.state.get("project_name") or "Undifined Project Name"
-        project_slug = tool_context.state.get("project_slug") or "undifined-project-slug"
+        project_name = tool_context.state.get("project_name") or "Undefined Project Name"
+        project_slug = tool_context.state.get("project_slug") or "undefined-project-slug"
 
         # Check if the generated code zip is available
         if generated_code_zip:
@@ -895,12 +909,110 @@ class SupervisorTools:
 
         return result
 
+    def get_training_files(self) -> dict[str, Any]:
+        """
+            Load training files for OPL logic map generation.
+
+            Returns:
+                - dict[str, Any] : The training files
+        """
+        start_message("SupervisorTools", "Get training files")
+
+        if not os.path.isdir(_TRAINING_FILES_DIR):
+            error_message("SupervisorTools", f"Training files directory not found: {_TRAINING_FILES_DIR}")
+            return {"status": "error", "message": "Training files directory not found"}
+
+        training = []
+        count = 0
+        for name in sorted(os.listdir(_TRAINING_FILES_DIR)):
+            path = os.path.join(_TRAINING_FILES_DIR, name)
+            if not os.path.isfile(path):
+                continue
+
+            try:
+                with open(path, "r", encoding="utf-8") as fh:
+                    file_content = fh.read()
+            except (OSError, UnicodeDecodeError) as exc:
+                info_message("SupervisorTools", f"Skipping training file {name}: {exc}")
+                continue
+
+            if not file_content:
+                info_message("SupervisorTools", f"Training file {name} is empty")
+                continue
+
+            training.append(file_content)
+            count += len(file_content)
+            info_message("SupervisorTools", f"Training file {name} loaded")
+
+        if not training:
+            error_message("SupervisorTools", "No training files loaded")
+            return {"status": "error", "message": "No training files loaded"}
+
+        success_message("SupervisorTools", f"Loaded {len(training)} training files with {count} characters")
+        return {"status": "success", "training_files": training}
+
+    def generate_opl_logic_map(self, files: list[str], tool_context: ToolContext) -> dict[str, Any]:
+        """
+            Build the OPL logic map from training files and store it in session.
+
+            Parameters:
+                - files : The training file contents
+                - tool_context : The tool context
+
+            Returns:
+                - dict[str, Any] : ``{"status": "success", "opl_logic_map": {...}}`` or an error dict
+        """
+        start_message("SupervisorTools", "Generate OPL logic map")
+
+        prompt = self._generate_opl_logic_map_prompt(files)
+        result = call_gemini(prompt)
+        if result.get("status") != "success":
+            error_message("SupervisorTools", result.get("message", "OPL logic map generation failed"))
+            return {"status": "error", "message": result.get("message", "OPL logic map generation failed")}
+
+        try:
+            opl_logic_map = json.loads(_strip_code_fences(result.get("data", "")))
+        except json.JSONDecodeError as exc:
+            error_message("SupervisorTools", f"Invalid OPL logic map JSON from Gemini: {exc}")
+            return {"status": "error", "message": f"Invalid OPL logic map JSON: {exc}"}
+
+        if not isinstance(opl_logic_map, dict) or not opl_logic_map:
+            error_message("SupervisorTools", "OPL logic map must be a non-empty object")
+            return {"status": "error", "message": "OPL logic map must be a non-empty object"}
+
+        tool_context.state["opl_logic_map"] = opl_logic_map
+        success_message("SupervisorTools", {"opl_logic_map_keys": list(opl_logic_map.keys())})
+        return {"status": "success", "opl_logic_map": opl_logic_map}
+
+    def save_opl_logic_map(self, opl_logic_map: dict[str, Any]) -> dict[str, Any]:
+        """
+            Persist the OPL logic map to the database.
+
+            Parameters:
+                - opl_logic_map : The OPL logic map
+
+            Returns:
+                - dict[str, Any] : The result
+        """
+        start_message("SupervisorTools", "Save OPL logic map")
+
+        response = self._db.save_opl_logic_map(opl_logic_map)
+        if response.get("status") == "success":
+            success_message("SupervisorTools", "OPL logic map saved to database")
+            return response
+        else:
+            error_message("SupervisorTools", response.get("message"))
+            return None
+
     def adk_tools(self) -> list[Callable[..., Any]]:
         return [
             self.get_opl,
             self.supervisor_first_step,
             self.generate_problem,
             self.finish_and_return_user,
+            self.get_training_files,
+            self.generate_opl_logic_map,
+            self.save_opl_logic_map,
         ]
 
 
@@ -1011,6 +1123,9 @@ class GeneratorTools:
         # Set the generated code zip in the tool context
         tool_context.state["generated_code_zip"] = code_zip_base64
         tool_context.state["code_coverage_graph"] = code_coverage_graph
+
+        # Record that the Generator completed so the Supervisor can route to the Critic.
+        tool_context.state["last_completed_role"] = "generator"
 
         success_message(
             "GeneratorTools",
@@ -1348,6 +1463,9 @@ class CriticTools:
 
         start_message("CriticTools", "Generate code evaluation for " + project_name)
 
+        # Record that the Critic completed so the Supervisor can route correctly.
+        tool_context.state["last_completed_role"] = "critic"
+
         if AGENT_DEBUG != 3 and AGENT_DEBUG != 4:
             success_message("CriticTools", "Returning demo code evaluation")
             return evaluation_example
@@ -1451,126 +1569,41 @@ class CriticTools:
             self.generate_code_evaluation,
         ]
 
-
-class TrainerTools:
-    """
-        Trainer Tools
-
-        Includes:
-            - get_training_files : Load training files for OPL logic map generation.
-            - generate_opl_logic_map : Build the OPL logic map from training files.
-            - save_opl_logic_map : Persist the OPL logic map to the database.
-    """
-
-    def __init__(self, db: DBconnection):
-        self._db = db
-
-    def _training_prompt(self, training_files: list[str]) -> str:
-        """
-        Generate the training prompt for the OPL logic map generation.
-
-        Parameters:
-            - training_files : The training files
-
-        Returns:
-            - str : The training prompt
-        """
-
-        file_prompt = ""
-        for file,index in enumerate(training_files):
-            file_prompt += f"File {index + 1}:\n{file}\n"
-
-        return f"""
-        You are the Trainer Agent. Your job is to generate the OPL logic map from the training files.
-
-        The training files are:
-        {file_prompt}
-
-        Generate the OPL logic map from the training files.
-
-        OPL logic map schema:
-        
-        """
-
-    def get_training_files(self) -> dict[str, Any]:
-        """
-            Load training files for OPL logic map generation.
-
-            Returns:
-                - dict[str, Any] : The training files
-        """
-        start_message("TrainerTools", "Get training files")
-
-        training = []
-        count = 0
-        for file in training_files:
-            file_content = open(file, "r", encoding="utf-8").read()
-
-            if not file_content:
-                info_message("TrainerTools", f"Training file {file} is empty")
-                continue
-
-            training.append(file_content)
-            count += len(file_content)
-            info_message("TrainerTools", f"Training file {file} loaded")
-
-        success_message("TrainerTools", f"Loaded {len(training)} training files with {count} characters")
-        return {"status": "success", "training_files": training}
-
-    def generate_opl_logic_map(self, training_files: list[str]) -> dict[str, Any]:
-        """
-            Build the OPL logic map from training files.
-
-            Parameters:
-                - training_files : The training files
-
-            Returns:
-                - dict[str, Any] : The generated OPL logic map
-        """
-        start_message("TrainerTools", "Generate OPL logic map")
-
-
-    def save_opl_logic_map(self, tool_context: ToolContext) -> dict[str, Any]:
-        """
-            Persist the OPL logic map to the database.
-
-            Parameters:
-                - tool_context : Session state
-
-            Returns:
-                - dict[str, Any] : The save result
-        """
-        start_message("TrainerTools", "Save OPL logic map")
-        return {"status": "stub", "message": "save_opl_logic_map is not implemented"}
-
-    def adk_tools(self) -> list[Callable[..., Any]]:
-        return [
-            self.get_training_files,
-            self.generate_opl_logic_map,
-            self.save_opl_logic_map,
-        ]
-
-
 class AgentTools:
     """All tools for the singular agent (unique names, no duplicates)."""
 
     def __init__(self, db: DBconnection | None = None):
         db = db or DBconnection.from_config()
         self._supervisor = SupervisorTools(db)
-        self._trainer = TrainerTools(db)
         self._generator = GeneratorTools(db)
         self._critic = CriticTools(db)
 
     def set_current_role(self, role: str, tool_context: ToolContext) -> dict[str, Any]:
-        """Switch active role: supervisor, trainer, generator, or critic."""
-        allowed = {"supervisor", "trainer", "generator", "critic"}
+        """Switch active role: supervisor, generator, or critic.
+
+        When control returns to the supervisor (a specialist finished its turn), the
+        iteration counter ``cnt_itr`` is incremented automatically so the supervisor's
+        ``max_itr`` guard works without the model having to mutate state itself.
+        """
+        allowed = {"supervisor", "generator", "critic"}
         if role not in allowed:
             return {
                 "status": "error",
                 "message": f"role must be one of {sorted(allowed)}",
             }
+
+        if role == "supervisor":
+            try:
+                tool_context.state["cnt_itr"] = int(tool_context.state.get("cnt_itr") or 0) + 1
+            except (TypeError, ValueError):
+                tool_context.state["cnt_itr"] = 1
+
         tool_context.state["current_role"] = role
-        return {"status": "success", "current_role": role}
+        return {
+            "status": "success",
+            "current_role": role,
+            "cnt_itr": tool_context.state.get("cnt_itr"),
+        }
 
     def adk_tools(self) -> list[Callable[..., Any]]:
         by_name: dict[str, Callable[..., Any]] = {}
@@ -1579,8 +1612,6 @@ class AgentTools:
             by_name[fn.__name__] = fn
 
         for fn in self._supervisor.adk_tools():
-            add(fn)
-        for fn in self._trainer.adk_tools():
             add(fn)
         for fn in self._generator.adk_tools():
             add(fn)
