@@ -7,6 +7,8 @@
       - supervisor_role : Supervisor role workflow as instruction text
 """
 
+MIN_EVAL_SCORE = 70
+
 def _generator_role() -> str:
    """
       Generator role workflow as instruction text
@@ -202,7 +204,7 @@ def supervisor_role(max_itr: int = 10, opl_id: str = None) -> str:
        - If **yes** → go to **C. Finish** (section C).
        - If **no** → continue to step 2.
     2. **Is there an unresolved problem this run?** A problem exists if **any** of these hold:
-       - `session.state["code_evaluation"]` exists, is not null, and its `overall_score` is below 80.
+       - `session.state["code_evaluation"]` exists, is not null, and its `overall_score` is below {MIN_EVAL_SCORE}.
          (A null `code_evaluation` means a prior fix cleared the stale failing score — treat it as
          "no evaluation yet" and hand off to the Critic to re-evaluate the regenerated code.)
        - The Generator finished but `session.state["generated_code_zip"]` is missing.

@@ -4,15 +4,18 @@
     Includes:
         - agentAPI : Blueprint for the agent API
         - index : Health check: ADK agent loads and Gemini API is reachable.
-        - generate : Generate frontend/backend from OPL and download as a zip.
+        - generate : Stream generation progress over SSE, then a download id.
+        - generate_download : Serve a previously generated zip by download id.
         - train : Train the agent to generate a Logic Map
 """
 
 import time
 import uuid
+import json
 from io import BytesIO
 import base64
-from flask import Blueprint, jsonify, request, send_file
+from collections.abc import Iterator
+from flask import Blueprint, jsonify, request, send_file, Response, stream_with_context
 from google.genai import types
 from messages import error_message, info_message, start_message, success_message
 from agent.agent import create_runner
@@ -21,6 +24,8 @@ from typing import Any
 import agent as agent_module
 from extensions import gemini_api_health_check
 from config import CONFIG
+from services.progress_tracker import GenerationProgressTracker
+from services.zip_cache import ZIPCache
 
 # Create the agent API blueprint
 agentAPI = Blueprint("agentAPI", __name__, url_prefix="/agent")
@@ -30,6 +35,9 @@ MAX_AGENT_ITERATIONS = 10
 
 # Max retries for the agent generation
 RETRIES = 3
+
+# ZIP cache
+ZIP_CACHE = ZIPCache()
 
 def _agent_health_check() -> dict[str, Any]:
     """
@@ -44,6 +52,126 @@ def _agent_health_check() -> dict[str, Any]:
         return {"success": True, "message": "Agent and runner can be constructed"}
     except Exception as exc:
         return {"success": False, "message": str(exc)}
+
+def _execute_generation(opl_id: str, user_id: str, filename: str) -> Iterator[dict[str, Any]]:
+    """
+        Run the agent and yield progress events for the SSE stream.
+
+        Mirrors the retry/session loop of ``generate`` but, instead of returning
+        the zip directly, observes each runner event to advance a progress
+        checklist and parks the finished zip in the download cache.
+
+        params:
+            - opl_id: The OPL id to generate from
+            - user_id: The requesting user
+            - filename: The download filename for the finished zip
+
+        yields:
+            - dict[str, Any] : SSE payloads (progress | retry | done | error)
+    """
+    tracker = GenerationProgressTracker()
+    yield tracker.to_event()
+
+    try:
+        runner = create_runner(max_itr=MAX_AGENT_ITERATIONS, opl_id=opl_id)
+
+        message = types.Content(
+            role="user",
+            parts=[types.Part(text="Start workflow of given current_role")],
+        )
+
+        for retry in range(RETRIES):
+            info_message("agentAPI", f"Trying to run the agent : {retry + 1}/{RETRIES}")
+
+            # Record the retry attempt
+            if retry > 0:
+                tracker.record_retry(retry + 1, RETRIES)
+                yield tracker.to_event()
+
+            # Create a new session
+            session_id = str(uuid.uuid4())
+            runner.session_service.create_session_sync(
+                app_name=CONFIG["gemini"]["app_name"],
+                user_id=user_id,
+                session_id=session_id,
+                state={
+                    "current_role": "supervisor",
+                    "initial_start": True,
+                    "opl_id": opl_id,
+                    "cnt_itr": 0,
+                },
+            )
+
+            try:
+                # Run the agent, advancing the checklist as events arrive
+                run_length = 0
+                for result in runner.run(user_id=user_id, session_id=session_id, new_message=message):
+                    run_length += 1
+
+                    # Observe the event and update the progress tracker
+                    if tracker.observe_event(result):
+                        yield tracker.to_event()
+
+                # Get the session updated by the agent
+                session = runner.session_service.get_session_sync(
+                    app_name=CONFIG["gemini"]["app_name"],
+                    user_id=user_id,
+                    session_id=session_id,
+                )
+
+                if session:
+                    generated_code_zip = session.state.get("generated_code_zip")
+                    workflow_problem = session.state.get("workflow_problem")
+
+                    if generated_code_zip:
+                        try:
+                            zip_bytes = base64.b64decode(generated_code_zip)
+
+                            project_name = session.state.get("project_name")
+                            success_message(
+                                "agentAPI",
+                                f"Agent created {run_length} events on retry {retry + 1}, "
+                                f"for user {user_id} with project name {project_name}",
+                            )
+
+                            # Mark the packaging activity as done
+                            tracker.mark_packaging_done()
+                            yield tracker.to_event()
+
+                            download_id = ZIP_CACHE.store_zip(zip_bytes, filename, user_id)
+
+                            # Create the done event and yield it
+                            done = tracker.to_event(event_type="done")
+                            done["download_id"] = download_id
+                            done["filename"] = filename
+
+                            info_message("agentAPI", f"Generation complete, download_id={download_id}")
+                            yield done
+                            return
+                        except Exception as e:
+                            error_message("agentAPI", f"{e}")
+                    elif workflow_problem:
+                        error_message("agentAPI", f"{workflow_problem}")
+                    elif run_length == 0:
+                        error_message("agentAPI", "Agent produced no events")
+                    else:
+                        error_message("agentAPI", "No generated code zip in session")
+                else:
+                    error_message("agentAPI", f"Failed to load session after agent run, on retry {retry + 1}/{RETRIES}")
+            except Exception as e:
+                error_message("agentAPI", f"Exception on retry {retry + 1}/{RETRIES} : {e}")
+
+            # Sleep for 3 seconds for the next retry
+            if retry < RETRIES - 1:
+                time.sleep(3)
+
+        message = f"Agent generation failed after {RETRIES} retries"
+        error_message("agentAPI", message)
+        yield {"type": "error", "message": message}
+    except Exception as exc:
+        message = f"Generate failed: {exc}"
+        error_message("agentAPI", message)
+        yield {"type": "error", "message": message}
 
 @agentAPI.get("/")
 def index():
@@ -101,105 +229,75 @@ def index():
 @agentAPI.get("/generate")
 def generate():
     """
-        Generate frontend/backend from OPL and download as a zip.
+        Generate a project while streaming progress over Server-Sent Events.
 
         Query params (optional):
-            opl: OPL source text (defaults to demo2)
-            filename: download filename (defaults to agent-chosen project slug, or generated_code.zip)
+            opl_id: OPL id to generate from
+            user_id: requesting user (scopes the download)
+            filename: download filename for the finished zip
+
+        The stream emits ``progress`` events as the agent works, a final ``done``
+        event carrying a ``download_id`` (fetch via ``/generate/download/<id>``),
+        or an ``error`` event on failure.
     """
     start_message("agentAPI", "Generate code zip")
 
-    # Get request parameters from the query string
     filename = request.args.get("filename") or 'generated_project.zip'
     user_id = request.args.get("user_id") or "generate-api"
     opl_id = request.args.get("opl_id") or "6a2043546b3d44d88ccc7602"
 
+    def event_stream():
+        for payload in _execute_generation(opl_id, user_id, filename):
+            yield f"data: {json.dumps(payload)}\n\n"
+
+    return Response(
+        stream_with_context(event_stream()),
+        mimetype="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "X-Accel-Buffering": "no",
+            "Connection": "close",
+        },
+    )
+
+@agentAPI.get("/generate/download")
+def generate_download():
+    """
+        Retrieve a previously generated zip by its download id
+
+        Query params:
+            user_id: requesting user
+            download_id: download id of the generated project
+    """
+    start_message("agentAPI", f"Download generated project")
+
+    user_id = request.args.get("user_id")
+    download_id = request.args.get("download_id")
+
+    if not user_id:
+        error_message("agentAPI", "Download request missing user_id")
+        return jsonify({"success": False, "message": "user_id is required"}), 400
+
+    if not download_id:
+        error_message("agentAPI", "Download request missing download_id")
+        return jsonify({"success": False, "message": "download_id is required"}), 400
+
     try:
-        # Create a new runner
-        runner = create_runner(max_itr=MAX_AGENT_ITERATIONS, opl_id=opl_id)
+        entry = ZIP_CACHE.get_zip(download_id, user_id)
 
-        message = types.Content(
-            role="user",
-            parts=[types.Part(text="Start workflow of given current_role")],
+        if entry is None:
+            error_message("agentAPI", f"Download not found or expired: {download_id}")
+            return jsonify({"success": False, "message": "Download not found or expired"}), 404
+
+        zip_file = BytesIO(entry["zip_bytes"])
+
+        success_message("agentAPI", f"Serving download {download_id}")
+        return send_file(
+            zip_file,
+            mimetype="application/zip",
+            as_attachment=True,
+            download_name=entry["filename"],
         )
-
-        for retry in range(RETRIES):
-            info_message("agentAPI", f"Trying to run the agent : {retry + 1}/{RETRIES}")
-
-            # Create a new session
-            session_id = str(uuid.uuid4())
-            runner.session_service.create_session_sync(
-                app_name=CONFIG["gemini"]["app_name"],
-                user_id=user_id,
-                session_id=session_id,
-                state={
-                    "current_role": "supervisor",
-                    "initial_start": True,
-                    "opl_id": opl_id,
-                    "cnt_itr": 0,
-                },
-            )
-
-            try:
-                # Run the agent and count the number of iterations
-                run_length = 0
-                for result in runner.run(user_id=user_id, session_id=session_id, new_message=message):
-                    run_length += 1
-
-                # Get the session updated by the agent
-                session = runner.session_service.get_session_sync(
-                    app_name=CONFIG["gemini"]["app_name"],
-                    user_id=user_id,
-                    session_id=session_id,
-                )
-
-                # Check if the session is loaded
-                if session:
-                    # Get the generated code zip and workflow problem from the session
-                    generated_code_zip = session.state.get("generated_code_zip")
-                    workflow_problem = session.state.get("workflow_problem")
-
-                    # Check if the generated code zip is valid
-                    if generated_code_zip:
-                        try:
-                            # Decode the generated code zip from base64
-                            zip_bytes = base64.b64decode(generated_code_zip)
-                            zip_file = BytesIO(zip_bytes)
-
-                            project_name = session.state.get("project_name")
-                            message = f"Agent created {run_length} events on retry {retry + 1}, for user {user_id} with project name {project_name}"
-                            success_message("agentAPI", message)
-                            
-                            # Send the generated code zip as a file
-                            return send_file(
-                                    zip_file,
-                                    mimetype="application/zip",
-                                    as_attachment=True,
-                                    download_name=filename,
-                            )
-                        except Exception as e:
-                            error_message("agentAPI", f"{e}")
-                    elif workflow_problem:
-                        error_message("agentAPI", f"{workflow_problem}")
-                    elif run_length == 0:
-                        error_message("agentAPI", "Agent produced no events")
-                    else:
-                        error_message("agentAPI", "No generated code zip in session")
-                else:
-                    error_message("agentAPI", f"Failed to load session after agent run, on retry {retry + 1}/{RETRIES}")
-            except Exception as e:
-                error_message("agentAPI", f"Exception on retry {retry + 1}/{RETRIES} : {e}")
-
-            # Sleep for 3 seconds for the next retry
-            if retry < RETRIES - 1:
-                time.sleep(3)
-
-        # Agent generation failed in all retries
-        message = f"Agent generation failed after {RETRIES} retries"
-        error_message("agentAPI", message)
-        return jsonify({"success": False, "message": message,}), 500
     except Exception as exc:
-        message = f"Generate failed: {exc}"
-        error_message("agentAPI", message)
-        return jsonify({"success": False, "message": message,}), 500
-        
+        error_message("agentAPI", f"Download failed: {exc}")
+        return jsonify({"success": False, "message": str(exc)}), 500
