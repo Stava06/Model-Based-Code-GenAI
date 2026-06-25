@@ -44,7 +44,7 @@ class Config:
             "server": {
                 "port": os.getenv("PORT") or 5000,
                 "debug": os.getenv("FLASK_DEBUG") or False,
-                "agent_debug": 3,
+                "agent_debug": 4,
                 "agent_debug_types": {
                     0: "none",
                     1: "supervisor",
@@ -55,7 +55,7 @@ class Config:
             },
             "gemini": {
                 "api_key": os.getenv("GEMINI_API_KEY"),
-                "model": os.getenv("GEMINI_MODEL") or "gemini-3.1-flash-lite",
+                "model": os.getenv("GEMINI_MODEL") or "gemini-2.5-pro",
                 "all_models": [
                     "gemini-3.5-flash",
                     "gemini-3.1-flash-lite",

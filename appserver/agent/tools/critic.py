@@ -11,11 +11,12 @@ from google.adk.tools import ToolContext
 from agent.memory import DBconnection
 from agent.examples.eval_metrics_example import metrics_example
 from agent.examples.eval_example import evaluation_example
-from messages import start_message, error_message, success_message
+from messages import start_message, error_message, success_message, info_message
 from extensions import call_gemini
 from agent.tool_helpers.create_folder_dir import coverage_graph_schema
 
 from agent.tool_helpers.coverage_graph import (
+    GRAPH_COVERAGE_SCORE_DEFAULT,
     canonicalize_coverage_graph,
     coerce_coverage_graph,
     graph_similarity_score,
@@ -137,7 +138,6 @@ class CriticTools:
                 "description": "Syntax-valid code and static execution-readiness checks ",
             },
         }
-        self.graph_coverage_scores = None
 
     def _gemini_reference_graph_prompt(self, opl_logic_map: dict[str, Any], opl: str) -> str:
         """
@@ -165,7 +165,7 @@ class CriticTools:
             {coverage_graph_schema()}
         """
 
-    def _parse_gemini_graph_response(raw: str) -> dict[str, Any] | None:
+    def _parse_gemini_graph_response(self, raw: str) -> dict[str, Any] | None:
         """
             Parse the Gemini graph response
 
@@ -259,7 +259,12 @@ class CriticTools:
             
         return opl_coverage_graph
 
-    def _graph_coverage_score(self, opl_id: str, code_coverage_graph: dict[str, Any], tool_context: ToolContext | None = None) -> None:
+    def _graph_coverage_score(
+        self,
+        opl_id: str,
+        code_coverage_graph: dict[str, Any] | None,
+        tool_context: ToolContext | None = None,
+    ) -> dict[str, float]:
         """
             Calculate the graph coverage score
 
@@ -269,29 +274,32 @@ class CriticTools:
                 - tool_context : The tool context
 
             returns:
-                - None
+                - dict[str, float] : Coverage scores (zeros when scoring cannot run)
         """
+        scores = GRAPH_COVERAGE_SCORE_DEFAULT.copy()
+
         # Check if code coverage graph is defined
         if not code_coverage_graph or not isinstance(code_coverage_graph, dict):
             error_message("CriticTools", "No code_coverage_graph given")
-            return 
+            return scores
 
         # Check if code coverage graph has nodes
         if not code_coverage_graph.get("nodes"):
             error_message("CriticTools", "code_coverage_graph has no nodes")
-            return 
+            return scores
 
         # Create the OPL reference graph
         opl_coverage_graph = self._get_opl_reference_graph(opl_id, tool_context)
         if opl_coverage_graph is None:
             error_message("CriticTools", "Could not build OPL reference graph",)
-            return 
+            return scores
 
         # Calculate the graph coverage score
-        self.graph_coverage_scores = graph_similarity_score(opl_coverage_graph, code_coverage_graph)
+        scores = graph_similarity_score(opl_coverage_graph, code_coverage_graph)
 
-        msg = {key: value for key, value in self.graph_coverage_scores.items() if key.split("_")[1] != "score"}
+        msg = {key: value for key, value in scores.items() if key.split("_")[1] != "score"}
         success_message("CriticTools", {"graph_coverage": msg})
+        return scores
 
     def _decode_project_zip(self, code_zip_b64: str) -> bytes | None:
         code_text = str(code_zip_b64).strip()
@@ -375,9 +383,12 @@ class CriticTools:
         )
         return result
 
-    def get_evaluation_metrics(self) -> dict[str, Any]:
+    def get_evaluation_metrics(self, tool_context: ToolContext) -> dict[str, Any]:
         """
             Fetch metrics for code evaluation
+
+            params:
+                - tool_context : The tool context
 
             returns:
                 - dict[str, Any] : The evaluation metrics
@@ -385,11 +396,14 @@ class CriticTools:
         start_message("CriticTools", "Get evaluation metrics")
 
         if AGENT_DEBUG != 3 and AGENT_DEBUG != 4:
-            success_message("CriticTools", "Returning demo evaluation metrics")
-            return metrics_example
+            info_message("CriticTools", "Returning demo evaluation metrics")
+            metrics = metrics_example
+        else:
+            metrics = self._eval_metrics
 
-        success_message("CriticTools", {"metrics": {key for key in self._eval_metrics}})
-        return self._eval_metrics
+        tool_context.state["evaluation_metrics"] = metrics
+        success_message("CriticTools", {"metrics": {key for key in metrics}})
+        return metrics
 
     def generate_code_evaluation(self, tool_context: ToolContext) -> dict[str, Any]:
         """
@@ -419,10 +433,8 @@ class CriticTools:
             error_message("CriticTools", "No opl_id in session")
             return {"status": "error", "message": "No opl_id in session"}
 
-        # Check if the evaluation metrics are in the session
         if not metrics or not isinstance(metrics, dict):
-            error_message("CriticTools", "No evaluation metrics in session")
-            return {"status": "error", "message": "No evaluation metrics in session"}
+            metrics = self.get_evaluation_metrics(tool_context)
 
         graph_metric = metrics.get("graph_coverage")
         exec_syntax_metric = metrics.get("execution_and_syntax")
@@ -455,10 +467,10 @@ class CriticTools:
         code_coverage_graph = canonicalize_coverage_graph(raw_graph) if isinstance(raw_graph, dict) else None
 
         # Evaluate based on metrics
-        self._graph_coverage_score(opl_id, code_coverage_graph, tool_context)
+        coverage_scores = self._graph_coverage_score(opl_id, code_coverage_graph, tool_context)
         syntax_scores = self._syntax_and_executable_score(code_zip_b64)
 
-        graph_coverage_score = self.graph_coverage_scores["overall_score"]
+        graph_coverage_score = coverage_scores["overall_score"]
         syntax_and_executable_score = syntax_scores["overall_score"]
         overall_score = round(
             (
@@ -473,9 +485,9 @@ class CriticTools:
             "graph_coverage": {
                 "score": graph_coverage_score,
                 "breakdown": {
-                    "entity_score": self.graph_coverage_scores["entity_score"],
-                    "state_score": self.graph_coverage_scores["state_score"],
-                    "relation_score": self.graph_coverage_scores["relation_score"],
+                    "entity_score": coverage_scores["entity_score"],
+                    "state_score": coverage_scores["state_score"],
+                    "relation_score": coverage_scores["relation_score"],
                 },
             },
             "syntax_and_executable": {

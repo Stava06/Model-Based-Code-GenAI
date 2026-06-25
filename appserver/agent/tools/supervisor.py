@@ -18,7 +18,7 @@ from config import CONFIG
 AGENT_DEBUG = CONFIG["server"]["agent_debug"]
 
 # Directory holding the raw training files used to build the OPL logic map.
-_TRAINING_FILES_DIR = os.path.join(os.path.dirname(__file__), "train", "files")
+_TRAINING_FILES_DIR = os.path.normpath(os.path.join(os.path.dirname(__file__), "..", "train", "files"))
 
 def _strip_code_fences(text: str) -> str:
     """

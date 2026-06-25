@@ -498,6 +498,10 @@ class GeneratorTools:
             error_message("GeneratorTools", "Failed to build project folders")
             return {"status": "error", "message": "Failed to build project folders"}
 
+        if not isinstance(code_coverage_graph, dict) or not code_coverage_graph.get("nodes"):
+            error_message("GeneratorTools", "Generated project is missing code_coverage_graph nodes")
+            return { "status": "error", "message": "Gemini must return code_coverage_graph with at least one node"}
+
         # Zip the project folders
         zip_bytes = _zip_project_folders(frontend_files, backend_files)
         code_zip_base64 = base64.b64encode(zip_bytes).decode("ascii")
