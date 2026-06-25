@@ -115,8 +115,7 @@ def _critic_role() -> str:
        `generated_code_zip`, `code_coverage_graph`, `opl_id`, `project_name`, and `evaluation_metrics`
        from session). The result (including `overall_score`) is stored in `code_evaluation`.
     4. **Handoff to Supervisor** — set `last_completed_role` to `critic`, call `set_current_role`
-       with `supervisor`, then stop. Do **not** call `generate_problem` yourself — the Supervisor
-       inspects `code_evaluation` and resolves a low score (overall_score < 80) via `generate_problem`.
+       with `supervisor`, then stop.
 
     ## Tools
 

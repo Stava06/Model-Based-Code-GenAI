@@ -13,7 +13,7 @@ from google.adk.runners import Runner
 from google.adk.sessions import InMemorySessionService
 from .memory import DBconnection
 from .roles import supervisor_role
-from .tools import AgentTools
+from .tools.agent_tools import AgentTools
 from config import CONFIG
 
 def _build_agent(db: DBconnection | None = None, max_itr: int = 10, opl_id: str = None) -> Agent:

@@ -44,7 +44,7 @@ class Config:
             "server": {
                 "port": os.getenv("PORT") or 5000,
                 "debug": os.getenv("FLASK_DEBUG") or False,
-                "agent_debug": 4,
+                "agent_debug": 3,
                 "agent_debug_types": {
                     0: "none",
                     1: "supervisor",
