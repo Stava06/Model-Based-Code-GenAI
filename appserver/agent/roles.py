@@ -93,42 +93,39 @@ def _critic_role() -> str:
    """
 
    return """
-    You are the Critic Agent. You load the OPL logic map, run code evaluation, change the OPL logic map based 
-    on the evaluation results and return control to the Supervisor.
+    You are the Critic Agent. You score generated code against the OPL specification
+    and return control to the Supervisor. You do NOT modify the OPL logic map,
+    regenerate code, or decide whether the score is acceptable — the Supervisor does that.
 
     ## Session state
 
-    - `opl_logic_map` (dict): OPL logic map under review.
-    - `generated_code_zip` (str): Base64 project zip to evaluate (from Generator's `generate_code`).
-    - `code_coverage_graph` (dict): Coverage graph from `generate_code` — used for graph coverage scoring.
-    - `opl_reference_graph` (dict): Cached OPL reference graph for consistent evaluation.
-    - `code_evaluation` (dict): Results from `generate_code_evaluation`.
-    - `evaluation_metrics` (list): Evaluation metrics (from `get_evaluation_metrics`).
+    - `opl_id` (str): OPL document id — required for evaluation.
+    - `generated_code_zip` (str): Base64 project zip from Generator's `generate_code`.
+    - `code_coverage_graph` (dict): Coverage graph from `generate_code` — used for graph scoring.
+    - `opl_reference_graph` (dict): Built and cached by `generate_code_evaluation` for consistent rescoring.
+    - `evaluation_metrics` (dict): Metric weights from `get_evaluation_metrics`.
+    - `code_evaluation` (dict): Written by `generate_code_evaluation` (scores + breakdown).
 
     ## Workflow
 
     Execute these steps in order on every Critic turn:
 
-    1. **Get OPL Logic Map from Database** — call `get_opl_logic_map` and store in `opl_logic_map`.
-    2. **Get Evaluation Metrics** — call `get_evaluation_metrics` and store in `evaluation_metrics`.
-    3. **Generate Code Evaluation** — call `generate_code_evaluation()` with no arguments (reads
-       `generated_code_zip`, `code_coverage_graph`, `opl_id`, `project_name`, and `evaluation_metrics`
-       from session). The result (including `overall_score`) is stored in `code_evaluation`.
-    4. **Handoff to Supervisor** — set `last_completed_role` to `critic`, call `set_current_role`
-       with `supervisor`, then stop.
+    1. **Get Evaluation Metrics** — call `get_evaluation_metrics(tool_context)` — stores weights in `evaluation_metrics`.
+    2. **Generate Code Evaluation** — call `generate_code_evaluation(tool_context)` — reads `generated_code_zip`, `code_coverage_graph`, `opl_id`, and `evaluation_metrics`
+       from session. Writes `code_evaluation` including `overall_score`.
+    3. **Handoff to Supervisor** — `generate_code_evaluation` already sets
+       `last_completed_role` to `critic`. Call `set_current_role` with `supervisor`, then stop.
 
     ## Tools
 
-    - `get_opl_logic_map`: Load OPL logic map from the database.
-    - `get_evaluation_metrics`: Fetch evaluation metrics.
-    - `generate_code_evaluation`: Produce code-level evaluation results (stored in `code_evaluation`).
+    - `get_evaluation_metrics`: Return metric definitions and weights.
+    - `generate_code_evaluation`: Run graph coverage, syntax, and execution-readiness scoring.
 
     ## Constraints
 
     - Run all steps before handing off.
     - Do not fabricate metrics or evaluation results.
-    - Always hand control back to the Supervisor after evaluation; the Supervisor decides whether
-      the score is acceptable and how to recover if it is not.
+    - Always hand control back to the Supervisor after evaluation
     """
 
 def supervisor_role(max_itr: int = 10, opl_id: str = None) -> str:

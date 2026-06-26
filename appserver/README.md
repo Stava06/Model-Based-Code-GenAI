@@ -8,6 +8,7 @@ Flask backend for Model-Based Code GenAI. Exposes user authentication, OPL file 
 - **MongoDB** (pymongo) — users, OPL documents, logic maps, evaluation scores
 - **google-adk** — agent runner, tools, sessions
 - **google-genai** — Gemini model calls
+- **esprima2** — JavaScript/JSX syntax validation in the Critic (pure Python, no Node)
 
 ## Project structure
 
@@ -15,24 +16,36 @@ Flask backend for Model-Based Code GenAI. Exposes user authentication, OPL file 
 appserver/
 ├── app.py                  # Flask entry point
 ├── config.py               # .env loader (singleton)
-├── extensions.py           # MongoDB initialization
-├── messages.py             # Structured console logging
+├── extensions.py             # MongoDB + Gemini helpers
+├── messages.py               # Structured console logging
 ├── requirements.txt
 ├── api/
-│   ├── users.py            # /users — auth & profiles
-│   ├── files.py            # /file  — OPL save & evaluation
-│   └── agent_api.py        # /agent — SSE generation & download
+│   ├── users.py              # /users — auth & profiles
+│   ├── files.py              # /file  — OPL save & evaluation
+│   └── agent_api.py          # /agent — SSE generation & download
 ├── agent/
-│   ├── agent.py            # ADK agent & runner factory
-│   ├── roles.py            # Supervisor / Generator / Critic instructions
-│   ├── tools.py            # Tool implementations (ADK function tools)
-│   ├── memory.py           # MongoDB data access
-│   └── agent_tools/        # Code generation, coverage, execution checks
+│   ├── agent.py              # ADK agent & runner factory
+│   ├── roles.py              # Supervisor / Generator / Critic instructions
+│   ├── memory.py             # MongoDB data access
+│   ├── tools/
+│   │   ├── agent_tools.py    # Registers all role tools for the ADK agent
+│   │   ├── supervisor.py     # OPL load, problem resolution, finish
+│   │   ├── generator.py      # Logic map, generate_code, save zip
+│   │   └── critic.py         # Evaluation metrics & scoring
+│   ├── tool_helpers/
+│   │   ├── coverage_graph.py # OPL/code graph canonicalization & similarity
+│   │   ├── execution_readiness.py  # Static fullstack zip checks
+│   │   ├── js_syntax.py      # JS/JSX parsing via esprima2
+│   │   └── create_folder_dir.py    # Generator prompts & graph schema
+│   ├── examples/             # Demo logic maps & evaluation payloads
+│   └── opl_examples/         # Sample OPL specifications
 └── services/
-    ├── progress_tracker.py # SSE activity log from agent events
-    ├── zip_cache.py        # Short-lived in-memory zip storage
-    └── maps.py             # Progress step labels & weights
+    ├── progress_tracker.py   # SSE activity log from agent events
+    ├── zip_cache.py          # Short-lived in-memory zip storage
+    └── maps.py               # Progress step labels & weights
 ```
+
+> **Note:** `agent/tools.py` and `agent/agent_tools/` are legacy copies kept during the tools split; the live agent uses `agent/tools/agent_tools.py`.
 
 ## Setup
 
@@ -42,6 +55,8 @@ appserver/
 cd appserver
 pip install -r requirements.txt
 ```
+
+Python **3.11+** recommended (matches local development and ADK).
 
 ### 2. Environment variables
 
@@ -55,10 +70,12 @@ Create `.env` in this directory:
 | `MONGO_OPL_COLLECTION` | Yes | Saved OPL documents |
 | `MONGO_OPL_LOGIC_MAP_COLLECTION` | Yes | OPL logic maps |
 | `GEMINI_API_KEY` | Yes | Google Gemini API key |
-| `GEMINI_MODEL` | No | Model id (default: `gemini-3.1-flash-lite`) |
+| `GEMINI_MODEL` | No | Model id (default: `gemini-2.5-pro`) |
 | `GEMINI_APP_NAME` | No | ADK app name (default: `model_based_codegen`) |
 | `PORT` | No | Listen port (default: `5000`) |
 | `FLASK_DEBUG` | No | Flask debug mode (default: `false`) |
+
+Agent debug mode is configured in `config.py` (`server.agent_debug`: `0` = none, `1` = supervisor, `2` = generator, `3` = critic, `4` = all). Lower values return demo payloads from some tools instead of calling Gemini.
 
 ### 3. Run
 
@@ -145,12 +162,23 @@ Returns `application/zip` on success. Entries expire after **15 minutes**.
 
 The agent is built with Google ADK (`agent/agent.py`) and follows a Supervisor → Generator → Critic loop:
 
-1. **Supervisor** loads the OPL and delegates to the Generator
-2. **Generator** creates an OPL logic map, sets a project name, and calls `generate_code` to produce a base64-encoded zip (`frontend/` + `backend/`)
-3. **Critic** runs `generate_code_evaluation` — graph coverage, syntax checks, and static execution-readiness tests
-4. **Supervisor** calls `finish_and_return_user` when the evaluation passes the score threshold
+1. **Supervisor** loads the OPL, routes hand-offs, and resolves failures via `generate_problem`
+2. **Generator** builds an OPL logic map, sets a project name, and calls `generate_code` to produce a base64-encoded zip (`frontend/` + `backend/`) plus a `code_coverage_graph`
+3. **Critic** calls `get_evaluation_metrics` and `generate_code_evaluation`, then hands control back to the Supervisor
+4. **Supervisor** finishes when the Critic’s `overall_score` meets the threshold (**70**), or retries via problem resolution
 
 Progress is tracked by `GenerationProgressTracker`, which maps ADK tool calls to UI steps defined in `services/maps.py`.
+
+### Critic evaluation
+
+`generate_code_evaluation` combines two weighted metrics (default 50/50):
+
+| Metric | What it checks |
+|--------|----------------|
+| **Graph coverage** | Similarity between an OPL reference graph (Gemini-extracted from OPL + logic map) and the Generator’s `code_coverage_graph` — entities, states, relations |
+| **Syntax & executable** | Python (`ast`), JSON (`json.loads`), JS/JSX (**esprima2**), plus static execution-readiness checks (required files, Flask/React/Vite layout, API wiring) |
+
+Scores are stored in session (`code_evaluation`) and persisted to MongoDB on the OPL document (`overall_score`, `graph_coverage_score`, `syntax_score`, `exec_score`).
 
 ### Generated project layout
 
@@ -167,6 +195,8 @@ project/
     └── requirements.txt
 ```
 
+The generated `backend/requirements.txt` is for the **downloaded project**, not this appserver’s dependencies.
+
 ## Health checks
 
 ```bash
@@ -182,10 +212,11 @@ curl http://localhost:5000/file/
 
 ## Development
 
-- Agent OPL examples live in `agent/opl_examples/`
-- Training context files in `agent/train/`
-- Evaluation and logic-map examples in `agent/examples/`
+- Agent OPL examples: `agent/opl_examples/`
+- Training context files: `agent/train/`
+- Evaluation and logic-map examples: `agent/examples/`
 - Console output uses structured messages from `messages.py` (`SUCCESS`, `ERROR`, `NOTE`, etc.)
+- Critic JS/JSX checks: `agent/tool_helpers/js_syntax.py` (requires `esprima2`; falls back to bracket balancing if unavailable)
 
 ## Troubleshooting
 
@@ -196,3 +227,4 @@ curl http://localhost:5000/file/
 | Download returns 404 | Zip expired (15 min TTL) or wrong `user_id` |
 | Generation retries 3 times | Agent session missing `generated_code_zip` — check Gemini quota and agent logs |
 | Port keeps incrementing | Another process is using the configured `PORT` |
+| JS syntax always passes/fails oddly | Confirm `esprima2` is installed (`pip show esprima2`) |

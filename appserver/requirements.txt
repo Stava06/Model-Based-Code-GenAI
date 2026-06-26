@@ -1,7 +1,8 @@
 flask>=3.0,<4
 flask-cors>=4.0,<7
+gunicorn>=22.0,<24
 pymongo>=4.0,<5
 python-dotenv>=1.0,<2
-gunicorn>=22.0,<24
 google-adk>=2.0,<3
 google-genai>=1.0,<2
+esprima2>=6.0,<7

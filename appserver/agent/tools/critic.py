@@ -25,100 +25,17 @@ from agent.tool_helpers.execution_readiness import (
     run_execution_readiness_checks,
     execution_readiness_score,
 )
+from agent.tool_helpers.js_syntax import check_js_syntax
 from config import CONFIG
 
 # Get the agent debug type
 AGENT_DEBUG = CONFIG["server"]["agent_debug"]
 
-def _zip_normalize_path(path: str) -> str:
-    return path.replace("\\", "/").lstrip("/")
-
-def _zip_file_map(zip_bytes: bytes) -> dict[str, str]:
-    files: dict[str, str] = {}
-    with zipfile.ZipFile(io.BytesIO(zip_bytes), "r") as zf:
-        for name in zf.namelist():
-            if name.endswith("/"):
-                continue
-            normalized = _zip_normalize_path(name)
-            try:
-                files[normalized] = zf.read(name).decode("utf-8")
-            except UnicodeDecodeError:
-                files[normalized] = ""
-    return files
-
-def _check_js_structure(source: str) -> bool:
-    """Lightweight JS/JSX syntax sanity check without Node or subprocess."""
-    if not source.strip():
-        return False
-
-    stack: list[str] = []
-    in_string: str | None = None
-    escape = False
-    pairs = {"(": ")", "[": "]", "{": "}"}
-
-    for ch in source:
-        if escape:
-            escape = False
-            continue
-        if ch == "\\" and in_string:
-            escape = True
-            continue
-        if in_string:
-            if ch == in_string:
-                in_string = None
-            continue
-        if ch in ("'", '"', "`"):
-            in_string = ch
-            continue
-        if ch in pairs:
-            stack.append(pairs[ch])
-        elif ch in pairs.values():
-            if not stack or stack.pop() != ch:
-                return False
-
-    return not stack and in_string is None
-
-def _check_python_syntax(source: str) -> bool:
-    try:
-        ast.parse(source)
-        compile(source, "<generated>", "exec")
-        return True
-    except (SyntaxError, ValueError):
-        return False
-
-def is_valid_project_zip(zip_bytes: bytes) -> bool:
-    """
-    Check if the project zip is valid
-
-    Parameters:
-        - zip_bytes : The zip bytes
-
-    Returns:
-        - bool : True if the project zip is valid, False otherwise
-    """
-
-    try:
-        with zipfile.ZipFile(io.BytesIO(zip_bytes), "r") as zf:
-            names = zf.namelist()
-    except zipfile.BadZipFile:
-        return False
-
-    # Check if the zip contains frontend and backend folders (no single files)
-    if "frontend" in names or "backend" in names:
-        return False
-
-    frontend_files = [ n for n in names if n.startswith("frontend/") and not n.endswith("/") ]
-    backend_files = [ n for n in names if n.startswith("backend/") and not n.endswith("/")]
-
-    # Check if files aren't empty
-    return len(frontend_files) >= 1 and len(backend_files) >= 1
-
 class CriticTools:
     """
-        Critic — OPL map review and code evaluation
+        Critic Tools — code evaluation against OPL specification
 
         Includes:
-            - get_opl_logic_map_from_db : Load the OPL logic map from the database
             - get_evaluation_metrics : Fetch metrics for code evaluation
             - generate_code_evaluation : Produce code-level evaluation results
     """
@@ -138,6 +55,23 @@ class CriticTools:
                 "description": "Syntax-valid code and static execution-readiness checks ",
             },
         }
+
+    def _check_python_syntax(self, source: str) -> bool:
+        """
+            Check the Python syntax of the source code
+
+            params:
+                - source : The source code
+
+            returns:
+                - bool : True if the Python syntax is valid, False otherwise
+        """
+        try:
+            ast.parse(source)
+            compile(source, "<generated>", "exec")
+            return True
+        except Exception:
+            return False
 
     def _gemini_reference_graph_prompt(self, opl_logic_map: dict[str, Any], opl: str) -> str:
         """
@@ -301,87 +235,117 @@ class CriticTools:
         success_message("CriticTools", {"graph_coverage": msg})
         return scores
 
-    def _decode_project_zip(self, code_zip_b64: str) -> bytes | None:
-        code_text = str(code_zip_b64).strip()
-        if not code_text:
-            return None
-        for validate in (True, False):
-            try:
-                zip_bytes = base64.b64decode(code_text, validate=validate)
-                if is_valid_project_zip(zip_bytes):
-                    return zip_bytes
-            except Exception:
-                continue
-        return None
+    def _zip_file_map(self, zip_bytes: bytes) -> dict[str, str]:
+        """
+            Get the file map from the zip bytes
 
-    def _syntax_and_executable_score(self, code_zip_b64: str) -> dict[str, float]:
-        empty = {"syntax_score": 0.0, "executable_score": 0.0, "overall_score": 0.0}
-        zip_bytes = self._decode_project_zip(code_zip_b64)
-        if zip_bytes is None:
-            error_message(
-                "CriticTools",
-                "No valid project zip for syntax/executable scoring "
-                "(expected base64-encoded zip with frontend/ and backend/)",
-            )
-            return empty
+            params:
+                - zip_bytes : The zip bytes
 
-        syntax_results: list[bool] = []
-        files = _zip_file_map(zip_bytes)
+            returns:
+                - dict[str, str] : The file map
+        """
+        files: dict[str, str] = {}
+        with zipfile.ZipFile(io.BytesIO(zip_bytes), "r") as zf:
+            for name in zf.namelist():
+                if name.endswith("/"):
+                    continue
+                normalized = name.replace("\\", "/").lstrip("/")
+                try:
+                    files[normalized] = zf.read(name).decode("utf-8")
+                except UnicodeDecodeError:
+                    files[normalized] = ""
+        return files
 
+    def _syntax_and_executable_score(self, code_zip_string: str) -> dict[str, float]:
+        """
+            Calculate the syntax and executable score
+
+            params:
+                - code_zip_string : The code zip string
+
+            returns:
+                - dict[str, float] : The syntax and executable score
+        """
+        # Define the default scores
+        scores = { "syntax_score": 0.0, "executable_score": 0.0, "overall_score": 0.0 }
+
+        # Decode the code zip string
+        is_valid = True
+        zip_bytes = None
+        try:
+            zip_bytes = base64.b64decode(code_zip_string.strip())
+            with zipfile.ZipFile(io.BytesIO(zip_bytes), "r") as zf:
+                names = zf.namelist()
+                
+            # Check if the zip contains frontend and backend folders (no single files)
+            if "frontend" in names or "backend" in names:
+                is_valid = False
+
+            frontend_files = [ n for n in names if n.startswith("frontend/") and not n.endswith("/") ]
+            backend_files = [ n for n in names if n.startswith("backend/") and not n.endswith("/")]
+
+            # Check if files aren't empty
+            is_valid = is_valid and len(frontend_files) >= 1 and len(backend_files) >= 1
+        except Exception:
+            pass
+        
+        # Check if the code zip string is valid
+        if not is_valid or zip_bytes is None:
+            error_message("CriticTools", "Code zip string is not valid")
+            return scores
+        
+        # Check the syntax of the files
+        syntax_results = []
+        files = self._zip_file_map(zip_bytes)
         for path, source in sorted(files.items()):
             suffix = path.rsplit(".", 1)[-1].lower() if "." in path else ""
+
             if suffix == "py":
-                ok = _check_python_syntax(source)
-                syntax_results.append(ok)
-                if not ok:
-                    error_message("CriticTools", f"Python syntax error in {path}")
+                type_checked = "Python"
+                is_valid = self._check_python_syntax(source)
             elif suffix == "json":
+                type_checked = "JSON"
                 try:
                     json.loads(source)
-                    syntax_results.append(True)
-                except json.JSONDecodeError as exc:
-                    error_message("CriticTools", f"JSON syntax error in {path}: {exc}")
-                    syntax_results.append(False)
+                    is_valid = True
+                except Exception:
+                    is_valid = False
             elif suffix in {"js", "jsx"}:
-                ok = _check_js_structure(source)
-                syntax_results.append(ok)
-                if not ok:
-                    error_message("CriticTools", f"JS/JSX structure error in {path}")
+                type_checked = "JS/JSX"
+                is_valid = check_js_syntax(source, path=path)
+            else:
+                continue
 
-        execution_checks = run_execution_readiness_checks(files)
-        execution_summary = execution_readiness_score(execution_checks)
-        for check in execution_checks:
-            if not check.passed:
-                detail = f"{check.name}: {check.detail}" if check.detail else check.name
-                error_message("CriticTools", f"Execution readiness failed — {detail}")
-
+            syntax_results.append(is_valid)
+            if not is_valid:
+                info_message("CriticTools", f"{type_checked} syntax error in {path}")
+        
+        # Calculate the syntax score
+        syntax_score = 0.0
         if not syntax_results:
             error_message("CriticTools", "No Python/JS source files found for syntax scoring")
-            syntax_score = 0.0
         else:
             syntax_score = round((sum(syntax_results) / len(syntax_results)) * 100, 2)
 
+        # Evaluate execution readiness score
+        execution_checks = run_execution_readiness_checks(files)
+        execution_summary = execution_readiness_score(execution_checks)
+
+        # Check if the execution readiness checks passed
+        for check in execution_checks:
+            if not check.passed:
+                info_message("CriticTools", f"Execution readiness failed — {check.name}: {check.detail if check.detail else check.name}")
+        
+        # Calculate the executable score
         executable_score = float(execution_summary["executable_score"])
 
-        result = {
-            "syntax_score": syntax_score,
-            "executable_score": executable_score,
-            "overall_score": round((syntax_score + executable_score) / 2, 2),
-        }
-        success_message(
-            "CriticTools",
-            {
-                "syntax_executable": {
-                    **result,
-                    "syntax_checks": len(syntax_results),
-                    "execution_checks": len(execution_checks),
-                    "execution_passed": execution_summary["passed_checks"],
-                    "execution_failed": execution_summary["failed_checks"],
-                    "execution_failures": execution_summary["failures"],
-                }
-            },
-        )
-        return result
+        # Set the scores for the syntax and executable score
+        scores["syntax_score"] = syntax_score
+        scores["executable_score"] = executable_score
+        scores["overall_score"] = round((syntax_score + executable_score) / 2, 2)
+        success_message("CriticTools", {"syntax_and_executable": scores})
+        return scores
 
     def get_evaluation_metrics(self, tool_context: ToolContext) -> dict[str, Any]:
         """
@@ -452,10 +416,10 @@ class CriticTools:
         total_weight = graph_weight + exec_syntax_weight or 1.0
 
         # Get the generated code zip from the session
-        code_zip_b64 = tool_context.state.get("finish_code_zip_base64") or tool_context.state.get("generated_code_zip")
+        code_zip = tool_context.state.get("finish_code_zip_base64") or tool_context.state.get("generated_code_zip")
         
         # Check if the generated code zip is in the session
-        if not code_zip_b64:
+        if not code_zip:
             error_message("CriticTools", "No generated_code_zip in session for syntax/executable scoring")
             return {
                 "status": "error",
@@ -468,44 +432,33 @@ class CriticTools:
 
         # Evaluate based on metrics
         coverage_scores = self._graph_coverage_score(opl_id, code_coverage_graph, tool_context)
-        syntax_scores = self._syntax_and_executable_score(code_zip_b64)
+        syntax_scores = self._syntax_and_executable_score(code_zip)
 
-        graph_coverage_score = coverage_scores["overall_score"]
-        syntax_and_executable_score = syntax_scores["overall_score"]
-        overall_score = round(
-            (
-                graph_coverage_score * graph_weight
-                + syntax_and_executable_score * exec_syntax_weight
-            )
-            / total_weight,
-            2,
-        )
+        # Calculate the overall score
+        final_cvg_score = coverage_scores["overall_score"]
+        final_syntax_and_exec_score = syntax_scores["overall_score"]
+        overall_score = round((final_cvg_score * graph_weight + final_syntax_and_exec_score * exec_syntax_weight) / total_weight, 2)
 
+        # Create final evaluation
         evaluation = {
             "graph_coverage": {
-                "score": graph_coverage_score,
-                "breakdown": {
-                    "entity_score": coverage_scores["entity_score"],
-                    "state_score": coverage_scores["state_score"],
-                    "relation_score": coverage_scores["relation_score"],
-                },
+                "score": final_cvg_score,
+                "breakdown": coverage_scores
             },
             "syntax_and_executable": {
-                "score": syntax_and_executable_score,
-                "breakdown": {
-                    "syntax_score": syntax_scores["syntax_score"],
-                    "executable_score": syntax_scores["executable_score"],
-                },
+                "score": final_syntax_and_exec_score,
+                "breakdown": syntax_scores
             },
             "overall_score": overall_score,
         }
-        tool_context.state["code_evaluation"] = evaluation
 
+        # Save the evaluation scores to the database
         response = self._db.save_opl_evaluation_scores(opl_id, evaluation)
         if response.get("status") != "success":
             error_message("CriticTools", response.get("message"))
             return {"status": "error", "message": response.get("message")}
 
+        tool_context.state["code_evaluation"] = evaluation
         success_message("CriticTools", {"evaluation": evaluation})
         return {"status": "success", "evaluation": evaluation}
 
