@@ -2,6 +2,7 @@ import React, { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import {
     PlusIcon,
+    ProjectsIcon,
     ProfileIcon,
     LogoutIcon,
 } from "../../assets/Icons";
@@ -24,6 +25,15 @@ const NavBar = ({ currentView, setCurrentView }) => {
                 localStorage.removeItem("user");
             }
         }
+
+        const handleUserUpdated = (event) => {
+            if (event.detail) {
+                setUser(event.detail);
+            }
+        };
+
+        window.addEventListener("user-updated", handleUserUpdated);
+        return () => window.removeEventListener("user-updated", handleUserUpdated);
     }, []);
 
     const handleLogout = () => {
@@ -37,6 +47,12 @@ const NavBar = ({ currentView, setCurrentView }) => {
             label: "New Project",
             icon: PlusIcon,
             path: "/newproject",
+        },
+        {
+            id: "myProjects",
+            label: "My Projects",
+            icon: ProjectsIcon,
+            path: "/myprojects",
         },
         {
             id: "profile",

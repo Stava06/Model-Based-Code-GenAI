@@ -175,11 +175,11 @@ The React frontend and Flask backend must be wired together: UI actions call the
 - Keep standard entry/config files (`main.jsx`, `vite.config.js`, `requirements.txt`
 
 ## Fullstack integration (mandatory)
-- Frontend runs on Vite (default port 5173); backend runs on Flask (port 5000).
+- Frontend runs on Vite (default port 5173); backend runs on Flask (port 5001).
 - Every data mutation or read in the UI goes through `src/service.js` using **axios** — never call
   `fetch` or axios directly from React components.
 - `src/service.js` exports async functions (one per backend operation) that use axios against
-  `const API_URL = import.meta.env.VITE_API_URL || "http://localhost:5000"`.
+  `const API_URL = import.meta.env.VITE_API_URL || "http://localhost:5001"`.
 - Backend routes must match the paths and HTTP methods used in `service.js` (prefer `/api/...` prefixes).
 - Enable **CORS** on the Flask app so the Vite dev server can call the API cross-origin.
 - React components import from `./service.js` and use its functions in `useEffect`, event handlers, etc.

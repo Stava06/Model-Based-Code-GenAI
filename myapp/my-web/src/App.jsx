@@ -17,6 +17,11 @@ function App() {
         />
 
         <Route
+          path="/myprojects"
+          element={<Homepage defaultView="myProjects" />}
+        />
+
+        <Route
           path="/profile"
           element={<Homepage defaultView="profile" />}
         />

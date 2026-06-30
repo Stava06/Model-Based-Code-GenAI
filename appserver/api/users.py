@@ -289,6 +289,50 @@ def register():
         error_msg["message"] = str(e)
         return jsonify(error_msg), 500
 
+@userAPI.patch("/profile")
+def update_profile():
+    """Update a user's display name."""
+    start_message("usersAPI", "Update profile route")
+
+    body = request.get_json(silent=True) or {}
+    user_id = body.get("user_id")
+    name = (body.get("name") or "").strip()
+
+    if not user_id:
+        error_message("usersAPI", "User ID was not provided")
+        return jsonify({"success": False, "message": "user_id is required"}), 400
+
+    if not name:
+        error_message("usersAPI", "Name was not provided")
+        return jsonify({"success": False, "message": "name is required"}), 400
+
+    coll = _users_collection()
+    if coll is None:
+        return jsonify({"success": False, "message": "Database not configured"}), 503
+
+    try:
+        result = coll.update_one({"_id": ObjectId(user_id)}, {"$set": {"name": name}})
+    except Exception as e:
+        error_message("usersAPI", f"Error updating profile: {e}")
+        return jsonify({"success": False, "message": str(e)}), 500
+
+    if result.matched_count == 0:
+        error_message("usersAPI", "User not found")
+        return jsonify({"success": False, "message": "User not found"}), 404
+
+    user = _find_user(user_id=user_id)
+    if user is None:
+        return jsonify({"success": False, "message": "User not found"}), 404
+
+    data = {
+        "_id": user["_id"],
+        "name": user["name"],
+        "email": user["email"],
+    }
+
+    success_message("usersAPI", f"Profile updated for user {user_id}")
+    return jsonify({"success": True, "message": "Profile updated successfully", "data": data}), 200
+
 @userAPI.get("/<string:email>")
 def get_user(email: str):
     """

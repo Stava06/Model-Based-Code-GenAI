@@ -1,60 +1,161 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState } from "react";
+import { updateUserProfile } from "../../services/UserService";
 
 const Profile = () => {
     const [user, setUser] = useState(null);
+    const [isEditing, setIsEditing] = useState(false);
+    const [editedName, setEditedName] = useState("");
+    const [isSaving, setIsSaving] = useState(false);
+    const [message, setMessage] = useState("");
+    const [error, setError] = useState("");
 
     useEffect(() => {
-        const storedUser = localStorage.getItem('user');
+        const storedUser = localStorage.getItem("user");
         if (storedUser) {
-            setUser(JSON.parse(storedUser));
+            try {
+                setUser(JSON.parse(storedUser));
+            } catch {
+                localStorage.removeItem("user");
+            }
         }
     }, []);
 
+    const handleEdit = () => {
+        if (!user) return;
+        setEditedName(user.name || "");
+        setIsEditing(true);
+        setMessage("");
+        setError("");
+    };
+
+    const handleSave = async () => {
+        if (!user?.id) {
+            setError("User ID not found. Please log in again");
+            return;
+        }
+
+        const trimmedName = editedName.trim();
+        if (!trimmedName) {
+            setError("Name cannot be empty");
+            return;
+        }
+
+        setIsSaving(true);
+        setError("");
+        setMessage("");
+
+        const result = await updateUserProfile(user.id, trimmedName);
+
+        if (!result.success) {
+            setError(result.message || "Failed to update profile");
+            setIsSaving(false);
+            return;
+        }
+
+        const updatedUser = {
+            ...user,
+            name: result.data?.name || trimmedName,
+        };
+
+        setUser(updatedUser);
+        localStorage.setItem("user", JSON.stringify(updatedUser));
+        window.dispatchEvent(new CustomEvent("user-updated", { detail: updatedUser }));
+        setIsEditing(false);
+        setMessage("Profile saved successfully");
+        setIsSaving(false);
+    };
+
+    const handleButtonClick = () => {
+        if (isEditing) {
+            handleSave();
+        } else {
+            handleEdit();
+        }
+    };
+
     return (
-        <div className="max-w-4xl mx-auto">
-            <div className="mb-8 relative inline-block">
-                <h1 className="text-3xl font-bold text-slate-900 tracking-tight">My Profile</h1>
-                <div className="absolute -bottom-2 left-0 w-1/2 h-1 bg-gradient-to-r from-orange-500 to-transparent rounded-full"></div>
-            </div>
+        <div className="relative min-h-screen w-full overflow-hidden">
+            <div className="absolute inset-0 -z-10 bg-gradient-to-br from-[#faf7ff] via-[#fcfbff] to-[#f3f6ff]" />
+            <div className="absolute top-[-10rem] right-[-5rem] h-[28rem] w-[28rem] rounded-full bg-pink-200/20 blur-3xl" />
+            <div className="absolute bottom-[-8rem] left-[-6rem] h-[24rem] w-[24rem] rounded-full bg-violet-200/20 blur-3xl" />
 
-            <div className="relative rounded-3xl border border-white/60 bg-white/70 p-8 shadow-2xl backdrop-blur-2xl ring-1 ring-black/5 overflow-hidden">
-                {/* Glow behind card content */}
-                <div className="absolute top-0 right-0 -mr-20 -mt-20 w-64 h-64 bg-pink-500/10 blur-[80px] rounded-full pointer-events-none"></div>
+            <div className="flex min-h-screen flex-col px-10 py-10 lg:px-16">
+                <div className="mb-10">
+                    <h1 className="text-4xl font-bold tracking-tight text-slate-800">
+                        My Profile
+                    </h1>
+                    <p className="mt-3 text-base text-slate-500">
+                        Your account details and workspace identity.
+                    </p>
+                </div>
 
-                <div className="relative z-10 flex flex-col md:flex-row items-center md:items-start gap-10">
-                    <div className="flex-1 w-full space-y-6">
-                        <div className="space-y-1">
-                            <label className="block text-xs font-medium text-slate-500 pl-1 uppercase tracking-wider">Full Name</label>
-                            <div className="relative">
-                                <div className="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-4">
-                                    <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 text-slate-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2" /><circle cx="12" cy="7" r="4" /></svg>
+                <div className="max-w-2xl rounded-[2.5rem] border border-violet-100 bg-white/70 p-10 shadow-2xl shadow-violet-100/30 backdrop-blur-xl">
+                    {error && (
+                        <div className="mb-6 rounded-2xl border border-rose-200 bg-rose-50 px-5 py-3 text-sm text-rose-700">
+                            {error}
+                        </div>
+                    )}
+
+                    {message && (
+                        <div className="mb-6 rounded-2xl border border-emerald-200 bg-emerald-50 px-5 py-3 text-sm text-emerald-700">
+                            {message}
+                        </div>
+                    )}
+
+                    <div className="mb-8 flex items-center gap-4">
+                        <div className="flex h-16 w-16 items-center justify-center rounded-2xl bg-gradient-to-br from-violet-400 to-fuchsia-400 text-2xl font-bold text-white shadow-lg shadow-violet-200/40">
+                            {(isEditing ? editedName : user?.name)?.charAt(0)?.toUpperCase() || "?"}
+                        </div>
+                        <div>
+                            <p className="text-lg font-semibold text-slate-800">
+                                {isEditing ? editedName || "..." : user?.name || "Guest"}
+                            </p>
+                            <p className="text-sm text-slate-500">
+                                {user?.email || "Not signed in"}
+                            </p>
+                        </div>
+                    </div>
+
+                    <div className="space-y-6">
+                        <div>
+                            <label
+                                htmlFor="profile-name"
+                                className="mb-2 block text-xs font-medium uppercase tracking-wide text-violet-500"
+                            >
+                                Full name
+                            </label>
+                            {isEditing ? (
+                                <input
+                                    id="profile-name"
+                                    type="text"
+                                    value={editedName}
+                                    onChange={(e) => setEditedName(e.target.value)}
+                                    className="w-full rounded-2xl border border-violet-100 bg-white/80 px-4 py-3 text-sm text-slate-700 outline-none focus:border-violet-300 focus:ring-4 focus:ring-violet-100"
+                                />
+                            ) : (
+                                <div className="w-full rounded-2xl border border-violet-100 bg-white/80 px-4 py-3 text-sm text-slate-700">
+                                    {user ? user.name : "Loading..."}
                                 </div>
-                                <div className="flex items-center w-full rounded-xl border border-slate-300 bg-white/50 py-3.5 pl-12 pr-4 text-sm text-slate-800 shadow-sm transition-all hover:bg-white/80">
-                                    {user ? user.name : 'Loading...'}
-                                </div>
+                            )}
+                        </div>
+
+                        <div>
+                            <label className="mb-2 block text-xs font-medium uppercase tracking-wide text-violet-500">
+                                Email address
+                            </label>
+                            <div className="w-full rounded-2xl border border-violet-100 bg-white/80 px-4 py-3 text-sm text-slate-700">
+                                {user ? user.email : "Loading..."}
                             </div>
                         </div>
 
-                        <div className="space-y-1">
-                            <label className="block text-xs font-medium text-slate-500 pl-1 uppercase tracking-wider">Email Address</label>
-                            <div className="relative">
-                                <div className="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-4">
-                                    <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 text-slate-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect width="20" height="16" x="2" y="4" rx="2" /><path d="m22 7-8.97 5.7a1.94 1.94 0 0 1-2.06 0L2 7" /></svg>
-                                </div>
-                                <div className="flex items-center w-full rounded-xl border border-slate-300 bg-white/50 py-3.5 pl-12 pr-4 text-sm text-slate-800 shadow-sm transition-all hover:bg-white/80">
-                                    {user ? user.email : 'Loading...'}
-                                </div>
-                            </div>
-                        </div>
-
-                        <div className="pt-6 flex justify-end">
-                            <button className="group relative overflow-hidden rounded-xl bg-gradient-brand px-6 py-3 text-sm font-semibold text-white shadow-md shadow-pink-500/20 transition-all hover:opacity-90 hover:shadow-lg hover:shadow-pink-500/30 active:scale-[0.98]">
-                                <span className="relative z-10 flex items-center gap-2">
-                                    Save Changes
-                                    <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 transition-transform group-hover:translate-x-1" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M5 12h14" /><path d="m12 5 7 7-7 7" /></svg>
-                                </span>
-                                {/* Shine effect */}
-                                <div className="absolute inset-0 -translate-x-full bg-gradient-to-r from-transparent via-white/20 to-transparent transition-transform duration-700 group-hover:translate-x-full"></div>
+                        <div className="flex justify-end pt-2">
+                            <button
+                                type="button"
+                                onClick={handleButtonClick}
+                                disabled={isSaving || !user}
+                                className="rounded-2xl bg-gradient-to-r from-violet-400 to-fuchsia-400 px-8 py-3 text-sm font-semibold text-white shadow-lg shadow-violet-200/40 transition hover:scale-[1.01] disabled:cursor-not-allowed disabled:opacity-60"
+                            >
+                                {isSaving ? "Saving..." : isEditing ? "Save" : "Edit"}
                             </button>
                         </div>
                     </div>

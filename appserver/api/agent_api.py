@@ -26,6 +26,7 @@ from extensions import gemini_api_health_check
 from config import CONFIG
 from services.progress_tracker import GenerationProgressTracker
 from services.zip_cache import ZIPCache
+from services.project_launcher import launch_project_in_vscode
 
 # Create the agent API blueprint
 agentAPI = Blueprint("agentAPI", __name__, url_prefix="/agent")
@@ -300,4 +301,43 @@ def generate_download():
         )
     except Exception as exc:
         error_message("agentAPI", f"Download failed: {exc}")
+        return jsonify({"success": False, "message": str(exc)}), 500
+
+@agentAPI.post("/launch")
+def launch_project():
+    """
+        Extract a generated zip and open it in VS Code with frontend/backend terminals.
+
+        JSON body or query params:
+            user_id: requesting user
+            download_id: cached download id from generation
+    """
+    start_message("agentAPI", "Launch project in VS Code")
+
+    body = request.get_json(silent=True) or {}
+    user_id = body.get("user_id") or request.args.get("user_id")
+    download_id = body.get("download_id") or request.args.get("download_id")
+
+    if not user_id:
+        error_message("agentAPI", "Launch request missing user_id")
+        return jsonify({"success": False, "message": "user_id is required"}), 400
+
+    if not download_id:
+        error_message("agentAPI", "Launch request missing download_id")
+        return jsonify({"success": False, "message": "download_id is required"}), 400
+
+    try:
+        entry = ZIP_CACHE.get_zip(download_id, user_id)
+        if entry is None:
+            error_message("agentAPI", f"Launch failed, download not found or expired: {download_id}")
+            return jsonify({"success": False, "message": "Download not found or expired"}), 404
+
+        result = launch_project_in_vscode(entry["zip_bytes"], entry["filename"])
+        success_message("agentAPI", f"Launched project at {result['extract_path']}")
+        return jsonify({"success": True, "data": result}), 200
+    except RuntimeError as exc:
+        error_message("agentAPI", f"Launch failed: {exc}")
+        return jsonify({"success": False, "message": str(exc)}), 400
+    except Exception as exc:
+        error_message("agentAPI", f"Launch failed: {exc}")
         return jsonify({"success": False, "message": str(exc)}), 500
