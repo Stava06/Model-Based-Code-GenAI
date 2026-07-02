@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useRef, useState } from "react";
-import { getMyProjects, getProjectOpl, downloadStoredProject } from "../../services/UserService";
+import { getMyProjects, getProjectOpl, downloadStoredProject, launchStoredProjectInVscode } from "../../services/UserService";
+import OpenInVscodeButton from "../OpenInVscodeButton";
 
 const PAGE_SIZE = 15;
 
@@ -237,7 +238,7 @@ const MyProjects = () => {
                         My Projects
                     </h1>
                     <p className="mt-3 text-base text-slate-500">
-                        Browse your saved OPL specifications and download generated projects.
+                        Browse your saved OPL specifications, download generated projects, or open them in VS Code.
                     </p>
                 </div>
 
@@ -340,21 +341,33 @@ const MyProjects = () => {
                                                                 })}
                                                             </div>
 
-                                                            <button
-                                                                type="button"
-                                                                onClick={(e) => handleDownload(e, project)}
-                                                                disabled={
-                                                                    !project.has_generated_code ||
-                                                                    downloadingId === project.id
-                                                                }
-                                                                className="rounded-2xl bg-gradient-to-r from-violet-400 to-fuchsia-400 px-6 py-3 text-sm font-semibold text-white shadow-lg shadow-violet-200/40 transition hover:scale-[1.01] disabled:cursor-not-allowed disabled:opacity-60"
-                                                            >
-                                                                {downloadingId === project.id
-                                                                    ? "Downloading..."
-                                                                    : project.has_generated_code
-                                                                      ? "Download Project"
-                                                                      : "No project generated"}
-                                                            </button>
+                                                            <div className="flex flex-wrap gap-3">
+                                                                <button
+                                                                    type="button"
+                                                                    onClick={(e) => handleDownload(e, project)}
+                                                                    disabled={
+                                                                        !project.has_generated_code ||
+                                                                        downloadingId === project.id
+                                                                    }
+                                                                    className="rounded-2xl bg-gradient-to-r from-violet-400 to-fuchsia-400 px-6 py-3 text-sm font-semibold text-white shadow-lg shadow-violet-200/40 transition hover:scale-[1.01] disabled:cursor-not-allowed disabled:opacity-60"
+                                                                >
+                                                                    {downloadingId === project.id
+                                                                        ? "downloading..."
+                                                                        : project.has_generated_code
+                                                                          ? "Download Project"
+                                                                          : "No project generated"}
+                                                                </button>
+
+                                                                <OpenInVscodeButton
+                                                                    launch={() =>
+                                                                        launchStoredProjectInVscode(
+                                                                            project.id,
+                                                                            userIdRef.current
+                                                                        )
+                                                                    }
+                                                                    disabled={!project.has_generated_code}
+                                                                />
+                                                            </div>
                                                         </div>
                                                     )}
                                                 </div>

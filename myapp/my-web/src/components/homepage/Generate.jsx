@@ -1,6 +1,7 @@
 import React, { useEffect, useRef, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { streamGenerateProject, downloadGeneratedProject, getOplEvaluation, launchProjectInVscode } from "../../services/UserService";
+import OpenInVscodeButton from "../OpenInVscodeButton";
 
 const DEFAULT_STEP_WEIGHTS = {
     init: 5,
@@ -184,9 +185,6 @@ const Generate = () => {
     const [evaluationWarning, setEvaluationWarning] = useState("");
     const [projectFileName, setProjectFileName] = useState(filename);
     const [pendingDownload, setPendingDownload] = useState(null);
-    const [isLaunching, setIsLaunching] = useState(false);
-    const [launchMessage, setLaunchMessage] = useState("");
-    const [launchError, setLaunchError] = useState("");
 
     useEffect(() => {
         if (logScrollRef.current) {
@@ -221,8 +219,6 @@ const Generate = () => {
         setEvaluation(null);
         setEvaluationWarning("");
         setPendingDownload(null);
-        setLaunchMessage("");
-        setLaunchError("");
         setProjectFileName(filename);
 
         const handleProgress = (payload) => {
@@ -400,30 +396,6 @@ const Generate = () => {
         }
     };
 
-    const handleOpenInVscode = async () => {
-        if (!pendingDownload || !userId) return;
-
-        setIsLaunching(true);
-        setLaunchError("");
-        setLaunchMessage("");
-
-        const result = await launchProjectInVscode(pendingDownload.downloadId, userId);
-
-        if (!result.success) {
-            setLaunchError(result.message || "Failed to open project in VS Code");
-            setIsLaunching(false);
-            return;
-        }
-
-        const extractPath = result.data?.extract_path;
-        setLaunchMessage(
-            extractPath
-                ? `Opened in VS Code at ${extractPath}. Frontend and backend terminals are starting.`
-                : result.data?.message || "Project opened in VS Code."
-        );
-        setIsLaunching(false);
-    };
-
     return (
         <div className="relative min-h-screen w-full overflow-hidden">
             <div className="absolute inset-0 -z-10 bg-gradient-to-br from-[#faf7ff] via-[#fcfbff] to-[#f3f6ff]" />
@@ -497,14 +469,13 @@ const Generate = () => {
                                 </p>
                                 {pendingDownload && (
                                     <div className="mt-4 flex flex-col items-center gap-3">
-                                        <button
-                                            type="button"
-                                            onClick={handleOpenInVscode}
-                                            disabled={isLaunching}
+                                        <OpenInVscodeButton
                                             className="rounded-2xl bg-gradient-to-r from-violet-400 to-fuchsia-400 px-8 py-3 text-sm font-semibold text-white shadow-lg shadow-violet-200/40 transition hover:scale-[1.01] disabled:cursor-not-allowed disabled:opacity-60"
-                                        >
-                                            {isLaunching ? "Opening in VS Code..." : "Open in VS Code"}
-                                        </button>
+                                            launch={() =>
+                                                launchProjectInVscode(pendingDownload.downloadId, userId)
+                                            }
+                                            disabled={!userId}
+                                        />
                                         <button
                                             type="button"
                                             onClick={retryDownload}
@@ -515,18 +486,6 @@ const Generate = () => {
                                     </div>
                                 )}
                             </div>
-
-                            {launchError && (
-                                <div className="rounded-2xl border border-rose-200 bg-rose-50 px-5 py-4 text-sm text-rose-700">
-                                    {launchError}
-                                </div>
-                            )}
-
-                            {launchMessage && (
-                                <div className="rounded-2xl border border-emerald-200 bg-emerald-50 px-5 py-4 text-sm text-emerald-700">
-                                    {launchMessage}
-                                </div>
-                            )}
 
                             {evaluationWarning && !evaluation && (
                                 <div className="rounded-2xl border border-amber-200 bg-amber-50 px-5 py-4 text-sm text-amber-800">

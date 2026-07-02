@@ -247,6 +247,26 @@ export const launchProjectInVscode = async (downloadId, userId) => {
     return { success: false, message: "Failed to open project in VS Code" };
 };
 
+export const launchStoredProjectInVscode = async (oplId, userId) => {
+    if (!oplId || !userId) {
+        return { success: false, message: "Project ID and user ID are required" };
+    }
+    try {
+        const response = await axios.post(`${API_URL}/file/launch/${oplId}`, {
+            user_id: userId,
+        });
+        if (response.data.success) {
+            return response.data;
+        }
+    } catch (error) {
+        return {
+            success: false,
+            message: error.response?.data?.message || error.message || "Failed to open project in VS Code",
+        };
+    }
+    return { success: false, message: "Failed to open project in VS Code" };
+};
+
 export const downloadGeneratedProject = async (downloadId, userId, filename, { signal } = {}) => {
     const params = new URLSearchParams({
         download_id: downloadId,

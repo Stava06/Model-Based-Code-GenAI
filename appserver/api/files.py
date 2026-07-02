@@ -12,6 +12,7 @@ from flask import Blueprint, request
 from flask import jsonify, current_app, send_file
 from messages import start_message, success_message, error_message
 from datetime import datetime
+from services.project_launcher import launch_project_in_vscode
 
 filesAPI = Blueprint("fileAPI", __name__, url_prefix="/file")
 
@@ -252,3 +253,45 @@ def download_generated_project(opl_id: str):
         as_attachment=True,
         download_name=file_name,
     )
+
+
+@filesAPI.post("/launch/<opl_id>")
+def launch_stored_project(opl_id: str):
+    """Extract a stored generated project and open it in VS Code with dev servers."""
+    start_message("filesAPI", f"Launch stored project in VS Code for {opl_id}")
+
+    coll = _opl_collection()
+    if coll is None:
+        return jsonify({"success": False, "message": "Database not configured"}), 503
+
+    body = request.get_json(silent=True) or {}
+    user_id = body.get("user_id") or request.args.get("user_id")
+    if not user_id:
+        return jsonify({"success": False, "message": "user_id is required"}), 400
+
+    try:
+        doc = coll.find_one({"_id": ObjectId(opl_id), "user_id": user_id})
+    except Exception:
+        doc = None
+
+    if doc is None:
+        return jsonify({"success": False, "message": "Project not found"}), 404
+
+    zip_bytes = doc.get("generated_code")
+    if not zip_bytes:
+        return jsonify({"success": False, "message": "No generated project available"}), 404
+
+    file_name = doc.get("file_name") or "generated_project"
+    if not file_name.lower().endswith(".zip"):
+        file_name = file_name.rsplit(".", 1)[0] + ".zip" if "." in file_name else f"{file_name}.zip"
+
+    try:
+        result = launch_project_in_vscode(zip_bytes, file_name)
+        success_message("filesAPI", f"Launched stored project at {result['extract_path']}")
+        return jsonify({"success": True, "data": result}), 200
+    except RuntimeError as exc:
+        error_message("filesAPI", f"Launch failed: {exc}")
+        return jsonify({"success": False, "message": str(exc)}), 400
+    except Exception as exc:
+        error_message("filesAPI", f"Launch failed: {exc}")
+        return jsonify({"success": False, "message": str(exc)}), 500
