@@ -7,7 +7,7 @@
       - supervisor_role : Supervisor role workflow as instruction text
 """
 
-MIN_EVAL_SCORE = 60
+MIN_EVAL_SCORE = 70
 
 def _generator_role() -> str:
    """
