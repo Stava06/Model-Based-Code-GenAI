@@ -155,7 +155,7 @@ class DBconnection:
             "objects": opl_logic_map.get("objects"),
             "processes": opl_logic_map.get("processes"),
             "relations": opl_logic_map.get("relations"),
-            "created_at": datetime.now(timezone.utc),
+            "created_at": datetime.now(),
         }
 
         opl_logic_map_col.insert_one(document)

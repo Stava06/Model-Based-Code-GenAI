@@ -2,6 +2,7 @@ import React, { useEffect, useRef, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { streamGenerateProject, downloadGeneratedProject, getOplEvaluation, launchProjectInVscode } from "../../services/UserService";
 import OpenInVscodeButton from "../OpenInVscodeButton";
+import { isLocalhost } from "../../utils/isLocalhost";
 
 const DEFAULT_STEP_WEIGHTS = {
     init: 5,
@@ -517,17 +518,26 @@ const Generate = () => {
                                     Next Steps
                                 </h3>
                                 <ol className="space-y-3 text-sm text-slate-600">
-                                    <li className="flex gap-3">
-                                        <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-violet-200 text-xs font-bold text-violet-700">1</span>
-                                        Click <span className="font-semibold text-violet-600">Open in VS Code</span> to extract the project, open it in VS Code, and start the frontend and backend dev servers.
-                                    </li>
+                                    {isLocalhost() ? (
+                                        <li className="flex gap-3">
+                                            <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-violet-200 text-xs font-bold text-violet-700">1</span>
+                                            Click <span className="font-semibold text-violet-600">Open in VS Code</span> to extract the project, open it in VS Code, and start the frontend and backend dev servers.
+                                        </li>
+                                    ) : (
+                                        <li className="flex gap-3">
+                                            <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-violet-200 text-xs font-bold text-violet-700">1</span>
+                                            Extract the downloaded zip and open the project folder in your editor.
+                                        </li>
+                                    )}
                                     <li className="flex gap-3">
                                         <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-violet-200 text-xs font-bold text-violet-700">2</span>
-                                        If needed, run <code className="rounded bg-white px-1.5 py-0.5 text-xs">npm install</code> in <code className="rounded bg-white px-1.5 py-0.5 text-xs">frontend/</code> and <code className="rounded bg-white px-1.5 py-0.5 text-xs">pip install -r requirements.txt</code> in <code className="rounded bg-white px-1.5 py-0.5 text-xs">backend/</code> before the dev servers start.
+                                        If needed, run <code className="rounded bg-white px-1.5 py-0.5 text-xs">npm install</code> in <code className="rounded bg-white px-1.5 py-0.5 text-xs">frontend/</code> and <code className="rounded bg-white px-1.5 py-0.5 text-xs">pip install -r requirements.txt</code> in <code className="rounded bg-white px-1.5 py-0.5 text-xs">backend/</code>{isLocalhost() ? " before the dev servers start" : ""}.
                                     </li>
                                     <li className="flex gap-3">
                                         <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-violet-200 text-xs font-bold text-violet-700">3</span>
-                                        Open the app in your browser (usually http://localhost:5173) and verify it matches your OPL specification.
+                                        {isLocalhost()
+                                            ? "Open the app in your browser (usually http://localhost:5173) and verify it matches your OPL specification."
+                                            : "Start the frontend and backend dev servers, then open the app in your browser and verify it matches your OPL specification."}
                                     </li>
                                 </ol>
                             </div>

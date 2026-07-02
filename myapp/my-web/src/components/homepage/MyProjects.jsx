@@ -238,7 +238,7 @@ const MyProjects = () => {
                         My Projects
                     </h1>
                     <p className="mt-3 text-base text-slate-500">
-                        Browse your saved OPL specifications, download generated projects, or open them in VS Code.
+                        Browse your saved OPL specifications and download generated projects.
                     </p>
                 </div>
 

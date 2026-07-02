@@ -1,4 +1,5 @@
 import React, { useState } from "react";
+import { isLocalhost } from "../utils/isLocalhost";
 
 const OpenInVscodeButton = ({
     launch,
@@ -9,6 +10,10 @@ const OpenInVscodeButton = ({
     const [isLaunching, setIsLaunching] = useState(false);
     const [error, setError] = useState("");
     const [message, setMessage] = useState("");
+
+    if (!isLocalhost()) {
+        return null;
+    }
 
     const handleClick = async () => {
         if (disabled || isLaunching) return;
