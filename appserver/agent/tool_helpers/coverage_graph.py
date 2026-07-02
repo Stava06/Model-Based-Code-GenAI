@@ -296,6 +296,7 @@ def _extract_graph_params(graph: dict[str, Any]) -> tuple:
                 edge["to"] = sorted_edge[1]
                 edge["undirected"] = True
 
+
             edge_key = (
                 edge["from"],
                 edge.get("from_state"),
