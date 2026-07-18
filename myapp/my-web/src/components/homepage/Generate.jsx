@@ -203,6 +203,7 @@ const Generate = () => {
         const runId = ++generationRunIdRef.current;
         const isCurrentRun = () => generationRunIdRef.current === runId;
         let doneReceived = false;
+        let errorReceived = false;
         const streamController = new AbortController();
         const downloadController = new AbortController();
 
@@ -341,6 +342,7 @@ const Generate = () => {
                     onProgress: handleProgress,
                     onError: (payload) => {
                         if (!isCurrentRun()) return;
+                        errorReceived = true;
                         setError(formatError(payload.message));
                         setIsGenerating(false);
                     },
@@ -350,7 +352,7 @@ const Generate = () => {
                     },
                 });
 
-                if (isCurrentRun() && !doneReceived) {
+                if (isCurrentRun() && !doneReceived && !errorReceived) {
                     setError(formatError("Generation stream closed before the project was ready."));
                     setIsGenerating(false);
                 }
@@ -414,7 +416,7 @@ const Generate = () => {
                 <div className="mx-auto w-full max-w-3xl rounded-[2.5rem] border border-violet-100 bg-white/70 p-10 shadow-2xl shadow-violet-100/30 backdrop-blur-xl">
                     {error && (
                         <div className="space-y-6 text-center">
-                            <div className="rounded-2xl border border-rose-200 bg-rose-50 px-5 py-4 text-sm text-rose-700">
+                            <div className="whitespace-pre-wrap rounded-2xl border border-rose-200 bg-rose-50 px-5 py-4 text-left text-sm text-rose-700">
                                 {error}
                             </div>
                             <button

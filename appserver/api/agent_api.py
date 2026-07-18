@@ -124,7 +124,11 @@ def _execute_generation(opl_id: str, user_id: str, filename: str) -> Iterator[di
                     generated_code_zip = session.state.get("generated_code_zip")
                     workflow_problem = session.state.get("workflow_problem")
 
-                    if generated_code_zip:
+                    if workflow_problem:
+                        error_message("agentAPI", f"{workflow_problem}")
+                        yield {"type": "error", "message": str(workflow_problem)}
+                        return
+                    elif generated_code_zip:
                         try:
                             zip_bytes = base64.b64decode(generated_code_zip)
 
@@ -151,8 +155,6 @@ def _execute_generation(opl_id: str, user_id: str, filename: str) -> Iterator[di
                             return
                         except Exception as e:
                             error_message("agentAPI", f"{e}")
-                    elif workflow_problem:
-                        error_message("agentAPI", f"{workflow_problem}")
                     elif run_length == 0:
                         error_message("agentAPI", "Agent produced no events")
                     else:
