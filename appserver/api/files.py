@@ -75,11 +75,18 @@ def save_opl_file():
         return jsonify({"success": False, "message": "Database not configured"}), 503
 
     body = request.get_json(silent=True) or {}
-    opl_file = body.get("opl") or request.args.get("opl")
+    # Prefer an explicit JSON "opl" key (including null) over query-string fallback.
+    if "opl" in body:
+        opl_file = body.get("opl")
+    else:
+        opl_file = request.args.get("opl")
+    if isinstance(opl_file, str):
+        opl_file = opl_file.strip()
+
     user_id = body.get("user_id") or request.args.get("user_id")
     file_name = body.get("file_name") or request.args.get("file_name") or ""
 
-    if not opl_file:
+    if opl_file is None or opl_file == "":
         error_message("filesAPI", "No OPL file provided")
         return jsonify({"success": False, "message": "No OPL file provided"}), 400
 

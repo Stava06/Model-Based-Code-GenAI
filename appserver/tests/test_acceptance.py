@@ -1,15 +1,21 @@
 """
 MOSAIC live acceptance tests.
 
-This module runs the full MOSAIC pipeline once against an already-running
-appserver, then reuses the produced project across five acceptance checks that
-map 1:1 to the MOSAIC acceptance-test table:
+This module runs ten numbered checks against an already-running appserver:
 
     1. Full-Stack Code Generation      -> test_1_full_stack_code_generation
     2. Executable Generated Application-> test_2_executable_generated_application
     3. Requirement Coverage Evaluation -> test_3_requirement_coverage_evaluation
     4. End-to-End Generation Workflow  -> test_4_end_to_end_generation_workflow
     5. OPL Logic Map Generation        -> test_5_opl_logic_map_generation
+    6. Login validity and edge cases   -> test_6_login_valid_and_edge_cases
+    7. Null / empty OPL text rejection -> test_7_null_opl_text_rejected
+    8. Register incomplete payloads    -> test_8_register_rejects_incomplete_payload
+    9. Get user by email               -> test_9_get_user_by_email
+   10. Save valid OPL + unknown eval   -> test_10_save_valid_opl_and_unknown_evaluation
+
+Tests 1–5 run the full MOSAIC pipeline once and reuse the produced project.
+Tests 6–10 are a lightweight ``MosaicApiUnitTest`` suite (no generation).
 
 Only the Python standard library is used. Node.js/npm and the generated
 backend's declared Python packages are treated as runtime prerequisites for the
@@ -77,6 +83,10 @@ SSE_TIMEOUT = int(os.environ.get("MOSAIC_SSE_TIMEOUT", "900"))
 APP_START_TIMEOUT = int(os.environ.get("MOSAIC_APP_START_TIMEOUT", "300"))
 SERVER_START_TIMEOUT = int(os.environ.get("MOSAIC_SERVER_START_TIMEOUT", "30"))
 SKIP_LAUNCH = os.environ.get("MOSAIC_SKIP_LAUNCH", "0").lower() in ("1", "true", "yes")
+
+LOGIN_EMAIL = os.environ.get("MOSAIC_LOGIN_EMAIL", "omri1@gmail.com")
+LOGIN_PASSWORD = os.environ.get("MOSAIC_LOGIN_PASSWORD", "123456")
+LOGIN_NAME = os.environ.get("MOSAIC_LOGIN_NAME", "Omri")
 
 # Mandatory files expected in a generated fullstack project.
 REQUIRED_FRONTEND_FILES = (
@@ -807,6 +817,325 @@ class MosaicAcceptanceTest(unittest.TestCase):
             sorted(positions),
             f"Stages out of order. Expected {expected} within observed {observed}",
         )
+
+
+# --------------------------------------------------------------------------- #
+# Lightweight API unit tests (no code generation)
+# --------------------------------------------------------------------------- #
+
+class MosaicApiUnitTest(unittest.TestCase):
+    """
+    Fast HTTP checks against a running appserver.
+
+    Does not run the agent pipeline. Starts the local appserver when needed,
+    ensures the login fixture user exists, then exercises auth and file APIs.
+    """
+
+    _procs: list[subprocess.Popen] = []
+    _log_files: list[Any] = []
+
+    @classmethod
+    def setUpClass(cls) -> None:
+        cls._procs = []
+        cls._log_files = []
+        cls.addClassCleanup(cls._cleanup_resources)
+
+        # Reuse the acceptance suite's local appserver bootstrap.
+        MosaicAcceptanceTest._ensure_appserver.__func__(cls)
+
+        try:
+            root_status, _ = _http_get_json("/")
+        except Exception as exc:  # noqa: BLE001
+            raise AssertionError(
+                f"Appserver not reachable at {BASE_URL} ({exc}). "
+                "Start it with `python app.py` and/or set MOSAIC_BASE_URL."
+            ) from exc
+        assert root_status == 200, f"Server health check failed: HTTP {root_status}"
+
+        users_status, users_body = _http_get_json("/users/")
+        assert users_status == 200, (
+            f"Users/MongoDB not ready (HTTP {users_status}): {users_body}. "
+            "Confirm MONGO_URL is configured."
+        )
+
+        file_status, file_body = _http_get_json("/file/")
+        assert file_status == 200, (
+            f"Files/MongoDB not ready (HTTP {file_status}): {file_body}. "
+            "Confirm MONGO_URL is configured."
+        )
+
+        cls._ensure_login_user()
+
+    @classmethod
+    def tearDownClass(cls) -> None:
+        cls._cleanup_resources()
+
+    @classmethod
+    def _cleanup_resources(cls) -> None:
+        for proc in cls._procs:
+            MosaicAcceptanceTest._terminate(proc)
+        cls._procs = []
+
+        for handle in cls._log_files:
+            try:
+                handle.close()
+            except Exception:  # noqa: BLE001
+                pass
+        cls._log_files = []
+
+    @classmethod
+    def _ensure_login_user(cls) -> None:
+        """Register the fixture user, or reset password when the account already exists."""
+        status, body = _http_post_json(
+            "/users/register",
+            {
+                "name": LOGIN_NAME,
+                "email": LOGIN_EMAIL,
+                "password": LOGIN_PASSWORD,
+            },
+        )
+        if status == 201 and isinstance(body, dict) and body.get("success"):
+            return
+
+        already_registered = status == 400 and isinstance(body, dict) and body.get("email")
+        if not already_registered:
+            raise AssertionError(
+                f"Could not ensure login fixture user {LOGIN_EMAIL!r} "
+                f"(HTTP {status}): {body}"
+            )
+
+        # Account exists — align password to the fixture so login edge cases are stable.
+        login_status, login_body = _http_get_json(
+            "/users/login",
+            {"email": LOGIN_EMAIL, "password": LOGIN_PASSWORD},
+        )
+        if login_status == 200 and isinstance(login_body, dict) and login_body.get("success"):
+            return
+
+        try:
+            from config import Config
+            from pymongo import MongoClient
+        except ImportError as exc:
+            raise AssertionError(
+                f"Fixture user {LOGIN_EMAIL!r} exists with a different password, "
+                "and pymongo/config are unavailable to reset it."
+            ) from exc
+
+        cfg = Config()
+        uri = cfg["database"]["uri"]
+        db_name = cfg["database"]["name"]
+        user_coll = cfg["database"]["user_collection"]
+        if not uri or not db_name or not user_coll:
+            raise AssertionError(
+                f"Fixture user {LOGIN_EMAIL!r} exists with a different password, "
+                "and MongoDB config is incomplete to reset it."
+            )
+
+        client = MongoClient(uri, serverSelectionTimeoutMS=5000)
+        try:
+            result = client[db_name][user_coll].update_one(
+                {"email": LOGIN_EMAIL},
+                {"$set": {"password": LOGIN_PASSWORD, "name": LOGIN_NAME}},
+            )
+        finally:
+            client.close()
+
+        if result.matched_count != 1:
+            raise AssertionError(
+                f"Could not reset password for fixture user {LOGIN_EMAIL!r} "
+                f"(matched={result.matched_count})"
+            )
+
+    # ------------------------------------------------------------------ #
+    # 6. Login — valid credentials and edge cases
+    # ------------------------------------------------------------------ #
+
+    def test_6_login_valid_and_edge_cases(self) -> None:
+        """Login succeeds for the fixture user and rejects auth edge cases."""
+        status, body = _http_get_json(
+            "/users/login",
+            {"email": LOGIN_EMAIL, "password": LOGIN_PASSWORD},
+        )
+        self.assertEqual(status, 200, f"Valid login failed: {body}")
+        self.assertIsInstance(body, dict)
+        self.assertTrue(body.get("success"), f"Valid login unsuccessful: {body}")
+        self.assertIn("data", body)
+        self.assertEqual(body["data"].get("email"), LOGIN_EMAIL)
+        self.assertEqual(body["data"].get("password"), LOGIN_PASSWORD)
+
+        cases = (
+            ("missing_both", None, 400, ("email", "password")),
+            ("missing_email", {"password": LOGIN_PASSWORD}, 400, ("email",)),
+            ("missing_password", {"email": LOGIN_EMAIL}, 400, ("password",)),
+            (
+                "wrong_password",
+                {"email": LOGIN_EMAIL, "password": "not-the-right-password"},
+                401,
+                ("password",),
+            ),
+            (
+                "unregistered_email",
+                {
+                    "email": "not-registered-acceptance@example.com",
+                    "password": LOGIN_PASSWORD,
+                },
+                401,
+                ("email",),
+            ),
+            (
+                "empty_email",
+                {"email": "", "password": LOGIN_PASSWORD},
+                400,
+                ("email",),
+            ),
+            (
+                "empty_password",
+                {"email": LOGIN_EMAIL, "password": ""},
+                400,
+                ("password",),
+            ),
+        )
+
+        for label, params, expected_status, flagged in cases:
+            with self.subTest(case=label):
+                if params is None:
+                    edge_status, edge_body = _http_get_json("/users/login")
+                else:
+                    edge_status, edge_body = _http_get_json("/users/login", params)
+
+                self.assertEqual(
+                    edge_status,
+                    expected_status,
+                    f"{label}: expected HTTP {expected_status}, got {edge_status}: {edge_body}",
+                )
+                self.assertIsInstance(edge_body, dict)
+                self.assertFalse(
+                    edge_body.get("success", False),
+                    f"{label}: success should be false: {edge_body}",
+                )
+                for flag in flagged:
+                    self.assertTrue(
+                        edge_body.get(flag),
+                        f"{label}: expected '{flag}' flag set: {edge_body}",
+                    )
+
+    # ------------------------------------------------------------------ #
+    # 7. Null / empty OPL text rejected on save
+    # ------------------------------------------------------------------ #
+
+    def test_7_null_opl_text_rejected(self) -> None:
+        """Saving null, empty, whitespace, or missing OPL text returns 400."""
+        payloads = (
+            ("null", {"opl": None, "user_id": USER_ID, "file_name": "null.opl"}),
+            ("empty", {"opl": "", "user_id": USER_ID, "file_name": "empty.opl"}),
+            ("whitespace", {"opl": "   \n\t  ", "user_id": USER_ID, "file_name": "ws.opl"}),
+            ("missing", {"user_id": USER_ID, "file_name": "missing.opl"}),
+        )
+
+        for label, payload in payloads:
+            with self.subTest(case=label):
+                status, body = _http_post_json("/file/save", payload)
+                self.assertEqual(
+                    status,
+                    400,
+                    f"{label}: expected HTTP 400, got {status}: {body}",
+                )
+                self.assertIsInstance(body, dict)
+                self.assertFalse(body.get("success", True), f"{label}: {body}")
+                self.assertIn("OPL", str(body.get("message", "")), f"{label}: {body}")
+
+    # ------------------------------------------------------------------ #
+    # 8. Register rejects incomplete payloads
+    # ------------------------------------------------------------------ #
+
+    def test_8_register_rejects_incomplete_payload(self) -> None:
+        """Registration requires name, email, and password."""
+        cases = (
+            ("empty_object", {}, ("name",)),
+            ("missing_name", {"email": "a@b.com", "password": "x"}, ("name",)),
+            ("missing_email", {"name": "A", "password": "x"}, ("email",)),
+            ("missing_password", {"name": "A", "email": "a@b.com"}, ("password",)),
+            (
+                "empty_fields",
+                {"name": "", "email": "", "password": ""},
+                ("name",),
+            ),
+        )
+
+        for label, payload, flagged in cases:
+            with self.subTest(case=label):
+                status, body = _http_post_json("/users/register", payload)
+                self.assertEqual(
+                    status,
+                    400,
+                    f"{label}: expected HTTP 400, got {status}: {body}",
+                )
+                self.assertIsInstance(body, dict)
+                self.assertFalse(body.get("success", False), f"{label}: {body}")
+                for flag in flagged:
+                    self.assertTrue(
+                        body.get(flag),
+                        f"{label}: expected '{flag}' flag set: {body}",
+                    )
+
+    # ------------------------------------------------------------------ #
+    # 9. Get user by email
+    # ------------------------------------------------------------------ #
+
+    def test_9_get_user_by_email(self) -> None:
+        """Known emails resolve; unknown emails return 404."""
+        status, body = _http_get_json(f"/users/{urllib.parse.quote(LOGIN_EMAIL)}")
+        self.assertEqual(status, 200, f"Get fixture user failed: {body}")
+        self.assertIsInstance(body, dict)
+        self.assertTrue(body.get("success"), body)
+        self.assertEqual(body.get("data", {}).get("email"), LOGIN_EMAIL)
+
+        missing = "missing-user-acceptance@example.com"
+        status, body = _http_get_json(f"/users/{urllib.parse.quote(missing)}")
+        self.assertEqual(status, 404, f"Expected 404 for unknown user: {body}")
+        self.assertIsInstance(body, dict)
+        self.assertFalse(body.get("success", True), body)
+
+    # ------------------------------------------------------------------ #
+    # 10. Valid OPL save + unknown evaluation lookup
+    # ------------------------------------------------------------------ #
+
+    def test_10_save_valid_opl_and_unknown_evaluation(self) -> None:
+        """A non-empty OPL saves successfully; unknown evaluation ids 404."""
+        status, body = _http_post_json(
+            "/file/save",
+            {
+                "opl": "Object Person.\nPerson is physical.",
+                "user_id": USER_ID,
+                "file_name": "unit_test_valid.opl",
+            },
+        )
+        self.assertEqual(status, 200, f"Valid OPL save failed: {body}")
+        self.assertIsInstance(body, dict)
+        self.assertTrue(body.get("success"), body)
+        opl_id = body.get("data")
+        self.assertIsInstance(opl_id, str)
+        self.assertTrue(opl_id, f"No opl_id returned: {body}")
+
+        # Persisted content is readable for the owning user.
+        get_status, get_body = _http_get_json(
+            f"/file/opl/{opl_id}",
+            {"user_id": USER_ID},
+        )
+        self.assertEqual(get_status, 200, f"OPL fetch failed: {get_body}")
+        self.assertTrue(get_body.get("success"), get_body)
+        self.assertIn("Person", str(get_body.get("data", "")))
+
+        # Unknown ObjectId-shaped id has no evaluation.
+        unknown_id = "000000000000000000000000"
+        eval_status, eval_body = _http_get_json(f"/file/evaluation/{unknown_id}")
+        self.assertEqual(
+            eval_status,
+            404,
+            f"Expected 404 for unknown evaluation: {eval_body}",
+        )
+        self.assertIsInstance(eval_body, dict)
+        self.assertFalse(eval_body.get("success", True), eval_body)
 
 
 if __name__ == "__main__":

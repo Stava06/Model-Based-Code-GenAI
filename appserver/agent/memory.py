@@ -77,6 +77,8 @@ class DBconnection:
             return {"status": "error", "message": f"OPL not found: {opl_id}"}
 
         opl = row.get("opl_data")
+        if isinstance(opl, str):
+            opl = opl.strip()
         if not opl:
             return {"status": "error", "message": f"OPL document has no opl_data: {opl_id}"}
 
