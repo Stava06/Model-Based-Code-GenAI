@@ -1,0 +1,41 @@
+1. Smart Home Climate Control System consists of Temperature Sensor, Humidity Sensor, Occupancy Sensor, Weather Service, Room, HVAC Unit, User Preference, Energy Mode, Schedule, Alert System, Maintenance Module, Learning Module, and Climate Controller.
+2. Room exhibits Current Temperature.
+3. User Preference exhibits Desired Temperature.
+4. Energy Mode can be normal or eco.
+5. HVAC Unit can be idle, heating, or cooling.
+
+6. Room can be comfortable, too cold, or too hot.
+7. Temperature Sensing is a process.
+8. Temperature Sensor is the instrument of Temperature Sensing.
+9. Temperature Sensing yields Current Temperature.
+10. Comfort Evaluating is a process.
+
+11. Climate Controller is the agent of Comfort Evaluating.
+12. Current Temperature and Desired Temperature are instruments of Comfort Evaluating.
+13. Comfort Evaluating changes Room from comfortable to too cold when Current Temperature is lower than Desired Temperature.
+14. Comfort Evaluating changes Room from comfortable to too hot when Current Temperature is higher than Desired Temperature.
+15. Comfort Evaluating keeps Room comfortable when Current Temperature equals Desired Temperature.
+
+16. Heating Activating is a process.
+17. Climate Controller is the agent of Heating Activating.
+18. HVAC Unit is the instrument of Heating Activating.
+19. Heating Activating changes HVAC Unit from idle to heating.
+20. Heating Activating requires Room to be too cold.
+
+21. Cooling Activating is a process.
+22. Climate Controller is the agent of Cooling Activating.
+23. HVAC Unit is the instrument of Cooling Activating.
+24. Cooling Activating changes HVAC Unit from idle to cooling.
+25. Cooling Activating requires Room to be too hot.
+
+26. HVAC Stopping is a process.
+27. Climate Controller is the agent of HVAC Stopping.
+28. HVAC Unit is the instrument of HVAC Stopping.
+29. HVAC Stopping changes HVAC Unit from heating to idle when Room is comfortable.
+30. HVAC Stopping changes HVAC Unit from cooling to idle when Room is comfortable.
+
+31. Eco Mode Applying is a process.
+32. Climate Controller is the agent of Eco Mode Applying.
+33. Energy Mode is the instrument of Eco Mode Applying.
+34. Eco Mode Applying changes Energy Mode from normal to eco.
+35. Eco Mode Applying reduces HVAC Unit activity.

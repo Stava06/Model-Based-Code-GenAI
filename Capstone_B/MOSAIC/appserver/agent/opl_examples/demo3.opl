@@ -1,0 +1,351 @@
+Model Name: FTT2_12_24
+
+SD
+1. Height, h, of Mother is value cm.
+2. Height, h, of Father is value cm.
+3. Fetal Birth Weight Indication is ok.
+4. Fetal Growth Indication is mother and child dependent.
+5. Postnatal Growth Indication is Child 345637 crossed 3 percentiles up to age 60 months, yielding severity 2..
+6. 16-week Length, Lft, is 11.6 cm.
+7. 16-week Mass, Mft, is 100.
+8. 32-week Length, Llt, is 42.4 cm.
+9. 32-week Mass, Mlt, is 1702 g.
+10. Birth Weight, bw, is 3.3 kg.
+11. 12-month Weight, w12, is 8.6 kg.
+12. 18-month Weight, w18, is 9.4 kg.
+13. 24-month Weight, w24, is 10.5 kg.
+14. 48-month Weight, w48, is 12 kg.
+15. 6-month Weight, w6, is 7 kg.
+16. 60-month Weight, w60, is 15 kg.
+17. Gender, g, of Child is boy string.
+18. 36-month Weight, w36, is 11.5 kg.
+19. Id of Child is 345637.
+20. Current Weight, cw, of Child is value kg.
+21. Mother exhibits Height, h.
+22. Father exhibits Height, h.
+23. Diagnosis consists of Fetal Birth Weight Indication,Fetal Growth Indication, and Postnatal Growth Indication.
+24. Child exhibits Current Weight, cw,,Gender, g,,Id,Perinatal Parameter Set, and Postnatal Parameter Set and one more attribute.
+25. Perinatal Parameter Set consists of 16-week Length, Lft,,16-week Mass, Mft,,32-week Length, Llt,,32-week Mass, Mlt,, and Birth Weight, bw.
+26. Postnatal Parameter Set consists of 12-month Weight, w12,,18-month Weight, w18,,24-month Weight, w24,,36-month Weight, w36,,48-month Weight, w48,,6-month Weight, w6,,60-month Weight, w60,, and Birth Weight, bw.
+27. Father,Mother, and Therapist Group handle FTT Diagnosing & Treating.
+28. FTT Diagnosing & Treating requires Perinatal Parameter Set of Child and Postnatal Parameter Set of Child.
+29. FTT Diagnosing & Treating yields Diagnosis,Implication Set, and Treatment Protocol.
+
+SD1: FTT Diagnosing & Treating in-zoomed
+1. FTT Diagnosing & Treating from SD zooms in SD1 into Diagnosing,Treatment Defining, and Implication Defining, which occur in that time sequence.
+2. Child and Therapist Group handle FTT Diagnosing & Treating.
+3. Diagnosing yields Diagnosis.
+4. Implication Defining requires Diagnosis and Treatment Protocol.
+5. Implication Defining yields Implication Set.
+6. Treatment Defining requires Diagnosis.
+7. Treatment Defining yields Treatment Protocol.
+
+SD1.1: Diagnosing in-zoomed
+1. Diagnosing from SD1 zooms in SD1.1 into Perinatal Growth Examining,Postnatal Growth Examining, and FTT Determining, which occur in that time sequence.
+2. Fetal Growth Indication is mother and child dependent.
+3. Fetal Birth Weight Indication is ok.
+4. Postnatal Growth Indication is Child 345637 crossed 3 percentiles up to age 60 months, yielding severity 2..
+5. Perinatal Growth Examining requires Perinatal Parameter Set of Child.
+6. Perinatal Growth Examining yields Fetal Birth Weight Indication and Fetal Growth Indication.
+7. Postnatal Growth Examining requires Postnatal Parameter Set of Child.
+8. Postnatal Growth Examining yields Postnatal Growth Indication.
+9. FTT Determining requires Fetal Birth Weight Indication,Fetal Growth Indication, and Postnatal Growth Indication.
+10. FTT Determining yields Diagnosis.
+
+SD1.1.1: Perinatal Growth Examining in-zoomed
+1. Perinatal Growth Examining from SD1.1 zooms in SD1.1.1 into First Trimester Pi Calculating,Last Trimester Pi Calculating,Pi Analyzing, and Birth Weight Analizing, which occur in that time sequence, as well as First Trimester Pi, PIft, and Last Trimester Pi, PIlt,.
+2. Fetal Growth Indication is mother and child dependent.
+3. 16-week Mass, Mft, is 100.
+4. 16-week Length, Lft, is 11.6 cm.
+5. 32-week Mass, Mlt, is 1702 g.
+6. 32-week Length, Llt, is 42.4 cm.
+7. Birth Weight, bw, is 3.3 kg.
+8. Fetal Birth Weight Indication is ok.
+9. First Trimester Pi, PIft, is 6.4.
+10. Last Trimester Pi, PIlt, is 2.2.
+11. First Trimester Pi Calculating requires 16-week Length, Lft, and 16-week Mass, Mft,.
+12. First Trimester Pi Calculating yields First Trimester Pi, PIft,.
+13. Last Trimester Pi Calculating requires 32-week Length, Llt, and 32-week Mass, Mlt,.
+14. Last Trimester Pi Calculating yields Last Trimester Pi, PIlt,.
+15. Pi Analyzing requires First Trimester Pi, PIft, and Last Trimester Pi, PIlt,.
+16. Pi Analyzing yields Fetal Growth Indication.
+17. Birth Weight Analizing requires Birth Weight, bw,.
+18. Birth Weight Analizing yields Fetal Birth Weight Indication.
+
+SD1.1.2: Postnatal Growth Examining in-zoomed
+1. Postnatal Growth Examining from SD1.1 zooms in SD1.1.2 into parallel Birth Percentile Calculating,36-month Percentile Calculating,48-month Percentile Calculating, and 60-month Percentile Calculating, parallel 6-month Percentile Calculating,12-month Percentile Calculating,18-month Percentile Calculating, and 24-month Percentile Calculating,Weight Gain Deceleration Analyzing, and Postnatal Growth Evaluating, which occur in that time sequence, as well as 12-month Percentile, p12,,18-month Percentile, p18,,24-month Percentile, p24,,36-month Percentile, p36,,48-month Percentile, p48,,6-month Percentile, p6,,60-month Percentile, p60,,Birth Percentile, p0,,Last Percentile-age, lastAgePer,,Major Percentiles Crossed, totalCross,,Postnatal Growth Analysis, and Severity, evalSeverity,.
+2. Postnatal Growth Indication is Child 345637 crossed 3 percentiles up to age 60 months, yielding severity 2..
+3. Gender of Child, g, is boy string.
+4. 6-month Weight, w6, is 7 kg.
+5. 12-month Weight, w12, is 8.6 kg.
+6. 18-month Weight, w18, is 9.4 kg.
+7. 24-month Weight, w24, is 10.5 kg.
+8. 36-month Weight, w36, is 11.5 kg.
+9. 48-month Weight, w48, is 12 kg.
+10. 60-month Weight, w60, is 15 kg.
+11. Birth Weight, bw, is 3.3 kg.
+12. Id of Child is 345637.
+13. 6-month Percentile, p6, is 2-10.
+14. 12-month Percentile, p12, is 2-10.
+15. 18-month Percentile, p18, is 1-5.
+16. 24-month Percentile, p24, is 2-10.
+17. 36-month Percentile, p36, is 0-0.
+18. 48-month Percentile, p48, is 0-0.
+19. 60-month Percentile, p60, is 1-5.
+20. Birth Percentile, p0, is 4-50.
+21. Last Percentile-age, lastAgePer, is 1-60.
+22. Severity, evalSeverity, is 2.
+23. Major Percentiles Crossed, totalCross, is 3.
+24. Postnatal Growth Analysis consists of Last Percentile-age, lastAgePer,,Major Percentiles Crossed, totalCross,, and Severity, evalSeverity.
+25. 6-month Percentile Calculating requires 6-month Weight, w6, and Gender of Child, g,.
+26. 6-month Percentile Calculating yields 6-month Percentile, p6,.
+27. Postnatal Growth Evaluating requires Id of Child,Last Percentile-age, lastAgePer,,Major Percentiles Crossed, totalCross,, and Severity, evalSeverity,.
+28. Postnatal Growth Evaluating yields Postnatal Growth Indication.
+29. 12-month Percentile Calculating requires 12-month Weight, w12, and Gender of Child, g,.
+30. 12-month Percentile Calculating yields 12-month Percentile, p12,.
+31. 18-month Percentile Calculating requires 18-month Weight, w18, and Gender of Child, g,.
+32. 18-month Percentile Calculating yields 18-month Percentile, p18,.
+33. 24-month Percentile Calculating requires 24-month Weight, w24, and Gender of Child, g,.
+34. 24-month Percentile Calculating yields 24-month Percentile, p24,.
+35. 36-month Percentile Calculating requires 36-month Weight, w36, and Gender of Child, g,.
+36. 36-month Percentile Calculating yields 36-month Percentile, p36,.
+37. 48-month Percentile Calculating requires 48-month Weight, w48, and Gender of Child, g,.
+38. 48-month Percentile Calculating yields 48-month Percentile, p48,.
+39. 60-month Percentile Calculating requires 60-month Weight, w60, and Gender of Child, g,.
+40. 60-month Percentile Calculating yields 60-month Percentile, p60,.
+41. Birth Percentile Calculating requires Birth Weight, bw, and Gender of Child, g,.
+42. Birth Percentile Calculating yields Birth Percentile, p0,.
+43. Weight Gain Deceleration Analyzing requires 12-month Percentile, p12,,18-month Percentile, p18,,24-month Percentile, p24,,36-month Percentile, p36,,48-month Percentile, p48,,6-month Percentile, p6,,60-month Percentile, p60,, and Birth Percentile, p0.
+44. Weight Gain Deceleration Analyzing yields Postnatal Growth Analysis.
+
+SD1.1.2.1: Weight Gain Deceleration Analyzing in-zoomed
+1. Weight Gain Deceleration Analyzing from SD1.1.2 zooms in SD1.1.2.1 into First Period Percentiles Cross Calculating,Last Percentile data getting,Second Period Percentiles Cross Calculating,Last Percentile data getting,Third Period Percentiles Cross Calculating, parallel Last Percentile Data Getting and Severity Evaluating, and Total Percentiles Crossed Calculating, which occur in that time sequence, as well as Last Percentile-Age-Period1, lastAgePerPc1,,Last Percentile-age-period2, lastAgePerPc2,,Period 1 Percentiles Crossed, pc1,,Period 2 Percentiles Crossed, pc2,, and Period 3 Percentiles Crossed, pc3,.
+2. 48-month Percentile, p48, is 0-0.
+3. 60-month Percentile, p60, is 1-5.
+4. 36-month Percentile, p36, is 0-0.
+5. 24-month Percentile, p24, is 2-10.
+6. 18-month Percentile, p18, is 1-5.
+7. 12-month Percentile, p12, is 2-10.
+8. 6-month Percentile, p6, is 2-10.
+9. Birth Percentile, p0, is 4-50.
+10. Severity, evalSeverity, is 2.
+11. Major Percentiles Crossed, totalCross, is 3.
+12. Last Percentile-age, lastAgePer, is 1-60.
+13. Period 1 Percentiles Crossed, pc1, is 2.
+14. Period 2 Percentiles Crossed, pc2, is 0.
+15. Period 3 Percentiles Crossed, pc3, is 1.
+16. Last Percentile-Age-Period1, lastAgePerPc1, is 2-6.
+17. Last Percentile-age-period2, lastAgePerPc2, is 2-24.
+18. First Period Percentiles Cross Calculating requires 6-month Percentile, p6, and Birth Percentile, p0,.
+19. First Period Percentiles Cross Calculating yields Period 1 Percentiles Crossed, pc1,.
+20. Second Period Percentiles Cross Calculating requires 12-month Percentile, p12,,18-month Percentile, p18,,24-month Percentile, p24,, and Last Percentile-Age-Period1, lastAgePerPc1,.
+21. Second Period Percentiles Cross Calculating yields Period 2 Percentiles Crossed, pc2,.
+22. Third Period Percentiles Cross Calculating requires 36-month Percentile, p36,,48-month Percentile, p48,,60-month Percentile, p60,, and Last Percentile-age-period2, lastAgePerPc2,.
+23. Third Period Percentiles Cross Calculating yields Period 3 Percentiles Crossed, pc3,.
+24. Total Percentiles Crossed Calculating requires Period 1 Percentiles Crossed, pc1,,Period 2 Percentiles Crossed, pc2,, and Period 3 Percentiles Crossed, pc3.
+25. Total Percentiles Crossed Calculating yields Major Percentiles Crossed, totalCross.
+26. Severity Evaluating requires Period 1 Percentiles Crossed, pc1,,Period 2 Percentiles Crossed, pc2,, and Period 3 Percentiles Crossed, pc3,.
+27. Severity Evaluating yields Severity, evalSeverity,.
+28. Last Percentile data getting consumes 6-month Percentile, p6, and Birth Percentile, p0,.
+29. Last Percentile data getting yields Last Percentile-Age-Period1, lastAgePerPc1,.
+30. Last Percentile data getting consumes 12-month Percentile, p12,,18-month Percentile, p18,,24-month Percentile, p24,, and Last Percentile-Age-Period1, lastAgePerPc1,.
+31. Last Percentile data getting yields Last Percentile-age-period2, lastAgePerPc2,.
+32. Last Percentile Data Getting consumes 36-month Percentile, p36,,48-month Percentile, p48,,60-month Percentile, p60,, and Last Percentile-age-period2, lastAgePerPc2,.
+33. Last Percentile Data Getting yields Last Percentile-age, lastAgePer,.
+
+SD1.2: Treatment Defining in-zoomed
+1. Treatment Defining from SD1 zooms in SD1.2 into Nutrition Changing,Medicine Taking,Family Guidance, and Hospitalization, which occur in that time sequence.
+2. Daily Caloric Value is value.
+3. Treatment Protocol consists of Daily Caloric Value and two more parts.
+4. Child handles Treatment Defining.
+5. Treatment Defining requires Diagnosis.
+6. Nutrition Changing yields Daily Caloric Value.
+
+SD1.2.1: Nutrition Changing in-zoomed
+1. Nutrition Changing from SD1.2 zooms in SD1.2.1 into Median Weight Defining,Daily Caloric Value Per Kilogram Calculatin,Calories Dividing,Calories Strengthening, and Supplements Supplying, which occur in that time sequence, as well as Median Weight, mw,.
+2. Daily Caloric Value is value.
+3. Gender, g, of Child is boy string.
+4. Age of Child is value month.
+5. Current Weight, cw, of Child is value kg.
+6. Zinc is 25 mg.
+7. Median Weight, mw, is value.
+8. Child exhibits Age,Current Weight, cw,, and Gender, g, and three more attributes.
+9. Treatment Protocol consists of Daily Caloric Value,Micronutrient, and Multu Calories Product Set.
+10. Micronutrient consists of Iron,Protein, and Zinc.
+11. Multu Calories Product Set consists of Concentrating Formula,Extra Lipids, and Glucose Polymers.
+12. Median Weight Defining requires Age of Child and Gender, g, of Child.
+13. Median Weight Defining yields Median Weight, mw.
+14. Daily Caloric Value Per Kilogram Calculatin requires Current Weight, cw, of Child.
+15. Daily Caloric Value Per Kilogram Calculatin consumes Median Weight, mw.
+16. Daily Caloric Value Per Kilogram Calculatin yields Daily Caloric Value.
+17. Calories Strengthening yields Multu Calories Product Set.
+18. Supplements Supplying yields Micronutrient.
+19. Calories Dividing requires Daily Caloric Value.
+
+OPL spec.
+1. Height, h, of Mother is value cm.
+2. Height, h, of Father is value cm.
+3. Fetal Birth Weight Indication is ok.
+4. Fetal Growth Indication is mother and child dependent.
+5. Postnatal Growth Indication is Child 345637 crossed 3 percentiles up to age 60 months, yielding severity 2..
+6. 16-week Length, Lft, is 11.6 cm.
+7. 16-week Mass, Mft, is 100.
+8. 32-week Length, Llt, is 42.4 cm.
+9. 32-week Mass, Mlt, is 1702 g.
+10. Birth Weight, bw, is 3.3 kg.
+11. 12-month Weight, w12, is 8.6 kg.
+12. 18-month Weight, w18, is 9.4 kg.
+13. 24-month Weight, w24, is 10.5 kg.
+14. 48-month Weight, w48, is 12 kg.
+15. 6-month Weight, w6, is 7 kg.
+16. 60-month Weight, w60, is 15 kg.
+17. Gender, g, of Child is boy string.
+18. 36-month Weight, w36, is 11.5 kg.
+19. Id of Child is 345637.
+20. Current Weight, cw, of Child is value kg.
+21. Mother exhibits Height, h.
+22. Father exhibits Height, h.
+23. Diagnosis consists of Fetal Birth Weight Indication,Fetal Growth Indication, and Postnatal Growth Indication.
+24. Child exhibits Current Weight, cw,,Gender, g,,Id,Perinatal Parameter Set, and Postnatal Parameter Set and one more attribute.
+25. Perinatal Parameter Set consists of 16-week Length, Lft,,16-week Mass, Mft,,32-week Length, Llt,,32-week Mass, Mlt,, and Birth Weight, bw.
+26. Postnatal Parameter Set consists of 12-month Weight, w12,,18-month Weight, w18,,24-month Weight, w24,,36-month Weight, w36,,48-month Weight, w48,,6-month Weight, w6,,60-month Weight, w60,, and Birth Weight, bw.
+27. Father,Mother, and Therapist Group handle FTT Diagnosing & Treating.
+28. FTT Diagnosing & Treating requires Perinatal Parameter Set of Child and Postnatal Parameter Set of Child.
+29. FTT Diagnosing & Treating yields Diagnosis,Implication Set, and Treatment Protocol.
+30. FTT Diagnosing & Treating from SD zooms in SD1 into Diagnosing,Treatment Defining, and Implication Defining, which occur in that time sequence.
+31. Child and Therapist Group handle FTT Diagnosing & Treating.
+32. Diagnosing yields Diagnosis.
+33. Implication Defining requires Diagnosis and Treatment Protocol.
+34. Implication Defining yields Implication Set.
+35. Treatment Defining requires Diagnosis.
+36. Treatment Defining yields Treatment Protocol.
+37. Diagnosing from SD1 zooms in SD1.1 into Perinatal Growth Examining,Postnatal Growth Examining, and FTT Determining, which occur in that time sequence.
+38. Fetal Growth Indication is mother and child dependent.
+39. Fetal Birth Weight Indication is ok.
+40. Postnatal Growth Indication is Child 345637 crossed 3 percentiles up to age 60 months, yielding severity 2..
+41. Perinatal Growth Examining requires Perinatal Parameter Set of Child.
+42. Perinatal Growth Examining yields Fetal Birth Weight Indication and Fetal Growth Indication.
+43. Postnatal Growth Examining requires Postnatal Parameter Set of Child.
+44. Postnatal Growth Examining yields Postnatal Growth Indication.
+45. FTT Determining requires Fetal Birth Weight Indication,Fetal Growth Indication, and Postnatal Growth Indication.
+46. FTT Determining yields Diagnosis.
+47. Perinatal Growth Examining from SD1.1 zooms in SD1.1.1 into First Trimester Pi Calculating,Last Trimester Pi Calculating,Pi Analyzing, and Birth Weight Analizing, which occur in that time sequence, as well as First Trimester Pi, PIft, and Last Trimester Pi, PIlt,.
+48. Fetal Growth Indication is mother and child dependent.
+49. 16-week Mass, Mft, is 100.
+50. 16-week Length, Lft, is 11.6 cm.
+51. 32-week Mass, Mlt, is 1702 g.
+52. 32-week Length, Llt, is 42.4 cm.
+53. Birth Weight, bw, is 3.3 kg.
+54. Fetal Birth Weight Indication is ok.
+55. First Trimester Pi, PIft, is 6.4.
+56. Last Trimester Pi, PIlt, is 2.2.
+57. First Trimester Pi Calculating requires 16-week Length, Lft, and 16-week Mass, Mft,.
+58. First Trimester Pi Calculating yields First Trimester Pi, PIft,.
+59. Last Trimester Pi Calculating requires 32-week Length, Llt, and 32-week Mass, Mlt,.
+60. Last Trimester Pi Calculating yields Last Trimester Pi, PIlt,.
+61. Pi Analyzing requires First Trimester Pi, PIft, and Last Trimester Pi, PIlt,.
+62. Pi Analyzing yields Fetal Growth Indication.
+63. Birth Weight Analizing requires Birth Weight, bw,.
+64. Birth Weight Analizing yields Fetal Birth Weight Indication.
+65. Postnatal Growth Examining from SD1.1 zooms in SD1.1.2 into parallel Birth Percentile Calculating,36-month Percentile Calculating,48-month Percentile Calculating, and 60-month Percentile Calculating, parallel 6-month Percentile Calculating,12-month Percentile Calculating,18-month Percentile Calculating, and 24-month Percentile Calculating,Weight Gain Deceleration Analyzing, and Postnatal Growth Evaluating, which occur in that time sequence, as well as 12-month Percentile, p12,,18-month Percentile, p18,,24-month Percentile, p24,,36-month Percentile, p36,,48-month Percentile, p48,,6-month Percentile, p6,,60-month Percentile, p60,,Birth Percentile, p0,,Last Percentile-age, lastAgePer,,Major Percentiles Crossed, totalCross,,Postnatal Growth Analysis, and Severity, evalSeverity,.
+66. Postnatal Growth Indication is Child 345637 crossed 3 percentiles up to age 60 months, yielding severity 2..
+67. Gender of Child, g, is boy string.
+68. 6-month Weight, w6, is 7 kg.
+69. 12-month Weight, w12, is 8.6 kg.
+70. 18-month Weight, w18, is 9.4 kg.
+71. 24-month Weight, w24, is 10.5 kg.
+72. 36-month Weight, w36, is 11.5 kg.
+73. 48-month Weight, w48, is 12 kg.
+74. 60-month Weight, w60, is 15 kg.
+75. Birth Weight, bw, is 3.3 kg.
+76. Id of Child is 345637.
+77. 6-month Percentile, p6, is 2-10.
+78. 12-month Percentile, p12, is 2-10.
+79. 18-month Percentile, p18, is 1-5.
+80. 24-month Percentile, p24, is 2-10.
+81. 36-month Percentile, p36, is 0-0.
+82. 48-month Percentile, p48, is 0-0.
+83. 60-month Percentile, p60, is 1-5.
+84. Birth Percentile, p0, is 4-50.
+85. Last Percentile-age, lastAgePer, is 1-60.
+86. Severity, evalSeverity, is 2.
+87. Major Percentiles Crossed, totalCross, is 3.
+88. Postnatal Growth Analysis consists of Last Percentile-age, lastAgePer,,Major Percentiles Crossed, totalCross,, and Severity, evalSeverity.
+89. 6-month Percentile Calculating requires 6-month Weight, w6, and Gender of Child, g,.
+90. 6-month Percentile Calculating yields 6-month Percentile, p6,.
+91. Postnatal Growth Evaluating requires Id of Child,Last Percentile-age, lastAgePer,,Major Percentiles Crossed, totalCross,, and Severity, evalSeverity,.
+92. Postnatal Growth Evaluating yields Postnatal Growth Indication.
+93. 12-month Percentile Calculating requires 12-month Weight, w12, and Gender of Child, g,.
+94. 12-month Percentile Calculating yields 12-month Percentile, p12,.
+95. 18-month Percentile Calculating requires 18-month Weight, w18, and Gender of Child, g,.
+96. 18-month Percentile Calculating yields 18-month Percentile, p18,.
+97. 24-month Percentile Calculating requires 24-month Weight, w24, and Gender of Child, g,.
+98. 24-month Percentile Calculating yields 24-month Percentile, p24,.
+99. 36-month Percentile Calculating requires 36-month Weight, w36, and Gender of Child, g,.
+100. 36-month Percentile Calculating yields 36-month Percentile, p36,.
+101. 48-month Percentile Calculating requires 48-month Weight, w48, and Gender of Child, g,.
+102. 48-month Percentile Calculating yields 48-month Percentile, p48,.
+103. 60-month Percentile Calculating requires 60-month Weight, w60, and Gender of Child, g,.
+104. 60-month Percentile Calculating yields 60-month Percentile, p60,.
+105. Birth Percentile Calculating requires Birth Weight, bw, and Gender of Child, g,.
+106. Birth Percentile Calculating yields Birth Percentile, p0,.
+107. Weight Gain Deceleration Analyzing requires 12-month Percentile, p12,,18-month Percentile, p18,,24-month Percentile, p24,,36-month Percentile, p36,,48-month Percentile, p48,,6-month Percentile, p6,,60-month Percentile, p60,, and Birth Percentile, p0.
+108. Weight Gain Deceleration Analyzing yields Postnatal Growth Analysis.
+109. Weight Gain Deceleration Analyzing from SD1.1.2 zooms in SD1.1.2.1 into First Period Percentiles Cross Calculating,Last Percentile data getting,Second Period Percentiles Cross Calculating,Last Percentile data getting,Third Period Percentiles Cross Calculating, parallel Last Percentile Data Getting and Severity Evaluating, and Total Percentiles Crossed Calculating, which occur in that time sequence, as well as Last Percentile-Age-Period1, lastAgePerPc1,,Last Percentile-age-period2, lastAgePerPc2,,Period 1 Percentiles Crossed, pc1,,Period 2 Percentiles Crossed, pc2,, and Period 3 Percentiles Crossed, pc3,.
+110. 48-month Percentile, p48, is 0-0.
+111. 60-month Percentile, p60, is 1-5.
+112. 36-month Percentile, p36, is 0-0.
+113. 24-month Percentile, p24, is 2-10.
+114. 18-month Percentile, p18, is 1-5.
+115. 12-month Percentile, p12, is 2-10.
+116. 6-month Percentile, p6, is 2-10.
+117. Birth Percentile, p0, is 4-50.
+118. Severity, evalSeverity, is 2.
+119. Major Percentiles Crossed, totalCross, is 3.
+120. Last Percentile-age, lastAgePer, is 1-60.
+121. Period 1 Percentiles Crossed, pc1, is 2.
+122. Period 2 Percentiles Crossed, pc2, is 0.
+123. Period 3 Percentiles Crossed, pc3, is 1.
+124. Last Percentile-Age-Period1, lastAgePerPc1, is 2-6.
+125. Last Percentile-age-period2, lastAgePerPc2, is 2-24.
+126. First Period Percentiles Cross Calculating requires 6-month Percentile, p6, and Birth Percentile, p0,.
+127. First Period Percentiles Cross Calculating yields Period 1 Percentiles Crossed, pc1,.
+128. Second Period Percentiles Cross Calculating requires 12-month Percentile, p12,,18-month Percentile, p18,,24-month Percentile, p24,, and Last Percentile-Age-Period1, lastAgePerPc1,.
+129. Second Period Percentiles Cross Calculating yields Period 2 Percentiles Crossed, pc2,.
+130. Third Period Percentiles Cross Calculating requires 36-month Percentile, p36,,48-month Percentile, p48,,60-month Percentile, p60,, and Last Percentile-age-period2, lastAgePerPc2,.
+131. Third Period Percentiles Cross Calculating yields Period 3 Percentiles Crossed, pc3,.
+132. Total Percentiles Crossed Calculating requires Period 1 Percentiles Crossed, pc1,,Period 2 Percentiles Crossed, pc2,, and Period 3 Percentiles Crossed, pc3.
+133. Total Percentiles Crossed Calculating yields Major Percentiles Crossed, totalCross.
+134. Severity Evaluating requires Period 1 Percentiles Crossed, pc1,,Period 2 Percentiles Crossed, pc2,, and Period 3 Percentiles Crossed, pc3,.
+135. Severity Evaluating yields Severity, evalSeverity,.
+136. Last Percentile data getting consumes 6-month Percentile, p6, and Birth Percentile, p0,.
+137. Last Percentile data getting yields Last Percentile-Age-Period1, lastAgePerPc1,.
+138. Last Percentile data getting consumes 12-month Percentile, p12,,18-month Percentile, p18,,24-month Percentile, p24,, and Last Percentile-Age-Period1, lastAgePerPc1,.
+139. Last Percentile data getting yields Last Percentile-age-period2, lastAgePerPc2,.
+140. Last Percentile Data Getting consumes 36-month Percentile, p36,,48-month Percentile, p48,,60-month Percentile, p60,, and Last Percentile-age-period2, lastAgePerPc2,.
+141. Last Percentile Data Getting yields Last Percentile-age, lastAgePer,.
+142. Treatment Defining from SD1 zooms in SD1.2 into Nutrition Changing,Medicine Taking,Family Guidance, and Hospitalization, which occur in that time sequence.
+143. Daily Caloric Value is value.
+144. Treatment Protocol consists of Daily Caloric Value and two more parts.
+145. Child handles Treatment Defining.
+146. Treatment Defining requires Diagnosis.
+147. Nutrition Changing yields Daily Caloric Value.
+148. Nutrition Changing from SD1.2 zooms in SD1.2.1 into Median Weight Defining,Daily Caloric Value Per Kilogram Calculatin,Calories Dividing,Calories Strengthening, and Supplements Supplying, which occur in that time sequence, as well as Median Weight, mw,.
+149. Daily Caloric Value is value.
+150. Gender, g, of Child is boy string.
+151. Age of Child is value month.
+152. Current Weight, cw, of Child is value kg.
+153. Zinc is 25 mg.
+154. Median Weight, mw, is value.
+155. Child exhibits Age,Current Weight, cw,, and Gender, g, and three more attributes.
+156. Treatment Protocol consists of Daily Caloric Value,Micronutrient, and Multu Calories Product Set.
+157. Micronutrient consists of Iron,Protein, and Zinc.
+158. Multu Calories Product Set consists of Concentrating Formula,Extra Lipids, and Glucose Polymers.
+159. Median Weight Defining requires Age of Child and Gender, g, of Child.
+160. Median Weight Defining yields Median Weight, mw.
+161. Daily Caloric Value Per Kilogram Calculatin requires Current Weight, cw, of Child.
+162. Daily Caloric Value Per Kilogram Calculatin consumes Median Weight, mw.
+163. Daily Caloric Value Per Kilogram Calculatin yields Daily Caloric Value.
+164. Calories Strengthening yields Multu Calories Product Set.
+165. Supplements Supplying yields Micronutrient.
+166. Calories Dividing requires Daily Caloric Value.
